@@ -1,0 +1,281 @@
+/* Step 3: timeline + device blocks + palette */
+
+:root {
+  --slot-count: 96;
+  --timeline-bg: #f8f9fa;
+  --timeline-border: #dee2e6;
+  --rigid-bg: #e9ecef;
+  --rigid-border: #adb5bd;
+}
+
+.timeline {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--timeline-border);
+  border-radius: 6px;
+  background: var(--timeline-bg);
+  padding: 0;
+  user-select: none;
+}
+
+.timeline-axis {
+  position: relative;
+  height: 28px;
+  border-bottom: 1px solid var(--timeline-border);
+  background: #fff;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #ced4da;
+  font-size: 11px;
+  color: #6c757d;
+  padding-left: 3px;
+}
+
+.timeline-row {
+  position: relative;
+  height: 38px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.timeline-row:last-child {
+  border-bottom: none;
+}
+
+.timeline-row-label {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  pointer-events: none;
+  font-size: 12px;
+  color: #495057;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+
+/* Rigid/non-draggable baseline row */
+.timeline-row.rigid {
+  background: var(--rigid-bg);
+}
+
+.device-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  line-height: 30px;
+  padding: 0 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: grab;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  transition: box-shadow 0.1s ease;
+}
+
+.device-block.dragging {
+  cursor: grabbing;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+  z-index: 3;
+}
+
+.device-block-label {
+  display: inline-block;
+  max-width: calc(100% - 26px);  /* leave room for the × button */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.device-block .remove-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.35);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  line-height: 14px;
+  font-size: 14px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.device-block .remove-btn:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.device-block.non-draggable {
+  cursor: default;
+  background: var(--rigid-border);
+}
+
+.device-block.non-draggable .remove-btn {
+  display: none;
+}
+
+.hint {
+  margin-top: 6px;
+}
+
+/* Palette */
+.palette-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.palette-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+
+.palette-item[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Bill card */
+.bill-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.bill-row.total {
+  font-weight: 600;
+  border-top: 1px solid #dee2e6;
+  margin-top: 8px;
+  padding-top: 6px;
+}
+
+.bill-delta {
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.bill-delta.positive { color: #c0392b; }  /* more expensive */
+.bill-delta.negative { color: #27ae60; }  /* savings */
+
+/* --- Step 5: device decision cards --- */
+.device-card {
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+.device-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e9ecef;
+  background: #f8f9fa;
+  border-radius: 6px 6px 0 0;
+}
+
+.device-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.device-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.device-card-body {
+  padding: 10px 14px;
+}
+
+.suggestion-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #e8f4fd;
+  color: #1f6091;
+  border: 1px solid #bee0f5;
+  margin-right: 6px;
+}
+
+.suggestion-chip.good {
+  background: #e7f7ec;
+  color: #1e7e34;
+  border-color: #c3e6cb;
+}
+
+.willingness-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.reasons-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 3px solid #e74c3c;
+}
+
+.reasons-row.hidden { display: none; }
+
+.bill-compare {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bill-compare-col {
+  flex: 1 1 0;
+  min-width: 150px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+.bill-compare-col.current {
+  background: #e7f7ec;
+  border-color: #c3e6cb;
+}
+
+.bill-compare-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #6c757d;
+  letter-spacing: 0.03em;
+}
+
+.bill-compare-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #212529;
+}

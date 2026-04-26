@@ -25,3 +25,9 @@ Thumbs.db
 
 # Results and exports
 exports/
+
+# Claude Code local settings
+.claude/
+
+# Local binaries (e.g. ngrok)
+*.exe

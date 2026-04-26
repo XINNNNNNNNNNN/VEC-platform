@@ -1,0 +1,63 @@
+"""Calculation engine base class."""
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+from vec_platform.models import UserInput, DailyProfile, BillBreakdown, ShadowPrices
+
+
+class CalculationEngine(ABC):
+    """Abstract base class for calculation engines."""
+    
+    @abstractmethod
+    def generate_profile(self, user_input: UserInput) -> DailyProfile:
+        """Generate daily load profile based on user input.
+        
+        Args:
+            user_input: UserInput model with building info
+            
+        Returns:
+            DailyProfile model with 96-slot load curves
+        """
+        pass
+    
+    @abstractmethod
+    def calculate_bill(
+        self, 
+        profile: DailyProfile, 
+        scenario: str
+    ) -> BillBreakdown:
+        """Calculate bill breakdown for a given scenario.
+        
+        Args:
+            profile: DailyProfile with load data
+            scenario: "no_vec" | "vec_no_adjust" | "vec_adjusted"
+            
+        Returns:
+            BillBreakdown model with cost breakdown
+        """
+        pass
+    
+    @abstractmethod
+    def get_shadow_prices(self, session_id: str) -> ShadowPrices:
+        """Get VEC internal shadow prices.
+        
+        Args:
+            session_id: Session UUID
+            
+        Returns:
+            ShadowPrices model with 96-slot price curves
+        """
+        pass
+    
+    @abstractmethod
+    def calculate_impacts(self, session_id: str) -> dict:
+        """Calculate broader impacts (CO2, grid, etc).
+        
+        Args:
+            session_id: Session UUID
+            
+        Returns:
+            Dict with impact metrics
+        """
+        pass
