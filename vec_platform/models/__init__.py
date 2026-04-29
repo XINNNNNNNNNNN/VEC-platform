@@ -21,7 +21,29 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     current_step: Mapped[int] = mapped_column(Integer, default=1)
+    # Deprecated: stores the v2 building_type. Kept for backward compat
+    # until Phase 3.1 reshapes Step 1.
     role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # ----- v3.0 fields -----
+    # Multi-country support: country self-selected at Step 8, language stamped
+    # at session creation. Defaults keep v2 behaviour (Sweden, English).
+    country_code: Mapped[str] = mapped_column(
+        String(8), default="SE", server_default="SE", nullable=False,
+    )
+    language: Mapped[str] = mapped_column(
+        String(8), default="en", server_default="en", nullable=False,
+    )
+    # A/B/C arm assigned at session creation (Phase 3 will write A/B; for now
+    # the column exists but every session lands in the C control group).
+    info_calibration_arm: Mapped[str] = mapped_column(
+        String(1), default="C", server_default="C", nullable=False,
+    )
+    # 'expert' vs 'general' — Phase 3.1 derives this from a Step 1 occupation
+    # question. Until then everyone is 'general'.
+    expertise: Mapped[str] = mapped_column(
+        String(16), default="general", server_default="general", nullable=False,
+    )
 
     # Relationships
     user_input: Mapped[Optional["UserInput"]] = relationship(
@@ -62,6 +84,14 @@ class UserInput(Base):
     pv_kwp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     has_bess: Mapped[bool] = mapped_column(Boolean, default=False)
     bess_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # ----- v3.0 fields -----
+    # Phase 3.1 will replace `building_type` (5-choice) with `ownership_type`
+    # (tenant/owner) and add an `occupation` question used for expert routing.
+    # Both columns are nullable so existing INSERTs through the v2 Step 1
+    # callback (which doesn't know about them) keep working unchanged.
+    ownership_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    occupation: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="user_input")
@@ -169,7 +199,7 @@ class SurveyResponse(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
-    
+
     q1_willingness: Mapped[str] = mapped_column(String(50))
     q2_reasons: Mapped[str] = mapped_column(Text)  # JSON array
     q3_concerns: Mapped[str] = mapped_column(Text)  # JSON array
@@ -179,17 +209,56 @@ class SurveyResponse(Base):
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")
 
 
+# ==================== v3.0 tables ====================
+
+class PriorExpectation(Base):
+    """First and second savings-percentage guesses.
+
+    Phase 3 will write one row at Step 0 (measurement_round=1) and another at
+    Step 2 (measurement_round=2) so we can compare expectations before vs.
+    after seeing the participant's own load curve.
+    """
+    __tablename__ = "prior_expectations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id"), nullable=False, index=True,
+    )
+    measurement_round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 or 2
+    pct: Mapped[float] = mapped_column(Float, nullable=False)  # 0.0 – 50.0
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False,
+    )
+
+
+class ExitThreshold(Base):
+    """Step 8 exit-threshold question (5-choice: 100/75/50/25/0% of stated savings)."""
+    __tablename__ = "exit_thresholds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id"),
+        nullable=False, index=True, unique=True,
+    )
+    threshold_ratio: Mapped[float] = mapped_column(Float, nullable=False)  # ∈ {1.0, 0.75, 0.5, 0.25, 0.0}
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False,
+    )
+
+
 # Import for type hints
 from vec_platform.models import Session, UserInput, DailyProfile, BillBreakdown, ShadowPrices, DeviceShift, DragLog, SurveyResponse
 
 __all__ = [
     "Base",
     "Session",
-    "UserInput", 
+    "UserInput",
     "DailyProfile",
     "BillBreakdown",
     "ShadowPrices",
     "DeviceShift",
     "DragLog",
     "SurveyResponse",
+    "PriorExpectation",
+    "ExitThreshold",
 ]
