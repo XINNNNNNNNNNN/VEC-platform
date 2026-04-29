@@ -41,23 +41,11 @@ class CalculationEngine(ABC):
     @abstractmethod
     def get_shadow_prices(self, session_id: str) -> ShadowPrices:
         """Get VEC internal shadow prices.
-        
+
         Args:
             session_id: Session UUID
-            
+
         Returns:
             ShadowPrices model with 96-slot price curves
-        """
-        pass
-    
-    @abstractmethod
-    def calculate_impacts(self, session_id: str) -> dict:
-        """Calculate broader impacts (CO2, grid, etc).
-        
-        Args:
-            session_id: Session UUID
-            
-        Returns:
-            Dict with impact metrics
         """
         pass

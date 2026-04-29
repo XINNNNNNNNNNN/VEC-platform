@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from vec_platform.main import get_db, calculation_engine
+from vec_platform.main import get_db
 from vec_platform.models import Session as SessionModel, SurveyResponse
 
 router = APIRouter()
@@ -77,18 +77,3 @@ def get_survey(
     }
 
 
-@router.get("/impacts/{session_id}")
-def get_impacts(
-    session_id: str,
-    db: Session = Depends(get_db)
-):
-    """Get broader impacts for a session."""
-    # Check session exists
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Get impacts from engine
-    impacts = calculation_engine.calculate_impacts(session_id)
-    
-    return impacts

@@ -102,6 +102,34 @@ D:\Projects\VEC Platform\
         └── css\
 ```
 
+## Database Migrations
+
+Schema changes are managed via Alembic. Never use `Base.metadata.create_all()` anymore — `vec_platform/main.py` no longer calls it, so the schema must be applied through migrations.
+
+### First-time setup (or after deleting `vec_platform.db`)
+
+```powershell
+alembic upgrade head
+```
+
+This creates all 8 application tables plus the internal `alembic_version` table.
+
+### After pulling code with new migrations
+
+```powershell
+alembic upgrade head
+```
+
+### Creating a new migration after schema changes
+
+```powershell
+alembic revision --autogenerate -m "describe_change_here"
+# Inspect the generated file in alembic/versions/ before running
+alembic upgrade head
+```
+
+The Alembic config (`alembic.ini` + `alembic/env.py`) reads `DATABASE_URL` from `vec_platform.config`, so no URL is hardcoded in the ini file.
+
 ## 下一步
 
 环境就绪后，开始写代码。打开 Claude Code，输入：

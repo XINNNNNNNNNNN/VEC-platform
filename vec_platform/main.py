@@ -18,12 +18,13 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
 from vec_platform.config import DATABASE_URL, DEBUG, SLOTS_PER_DAY
-from vec_platform.models import Base
 from vec_platform.engine import MockEngine
 
 # ==================== Database ====================
+# Schema is managed by Alembic — run `alembic upgrade head` before starting
+# the app on a fresh database. Do NOT call Base.metadata.create_all() here:
+# it would let the app silently create tables that diverge from migrations.
 engine = create_engine(DATABASE_URL, echo=DEBUG)
-Base.metadata.create_all(bind=engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Global calculation engine

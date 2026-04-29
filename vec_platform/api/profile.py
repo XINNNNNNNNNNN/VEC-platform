@@ -117,31 +117,6 @@ def get_profile(
     }
 
 
-@router.post("/generate-profile")
-def generate_profile(
-    session_id: str,
-    db: Session = Depends(get_db)
-):
-    """Regenerate profile for existing user input."""
-    user_input = db.query(UserInput).filter(
-        UserInput.session_id == session_id
-    ).first()
-
-    if not user_input:
-        raise HTTPException(status_code=404, detail="User input not found")
-
-    # Generate new profile
-    profile = calculation_engine.generate_profile(user_input)
-    db.add(profile)
-    db.commit()
-    db.refresh(profile)
-
-    return {
-        "status": "ok",
-        "profile_id": profile.id,
-    }
-
-
 class DevicePosition(BaseModel):
     name: str
     start_slot: int

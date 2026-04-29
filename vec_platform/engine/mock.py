@@ -1,7 +1,6 @@
 """Mock calculation engine with fake data for development."""
 
 import json
-import random
 
 from vec_platform.engine.base import CalculationEngine
 from vec_platform.models import UserInput, DailyProfile, BillBreakdown, ShadowPrices
@@ -135,19 +134,6 @@ class MockEngine(CalculationEngine):
             internal_sell=json.dumps(internal_sell),
             feed_in_price=json.dumps(feed_in),
         )
-
-    def calculate_impacts(self, session_id: str) -> dict:
-        """Calculate mock broader impacts."""
-
-        co2_kg = random.uniform(50, 150)
-        peak_reduction = random.uniform(0.1, 0.3)
-
-        return {
-            "co2_kg": round(co2_kg, 2),
-            "peak_reduction_pct": round(peak_reduction * 100, 1),
-            "grid_load_mw": round(random.uniform(0.5, 2.0), 2),
-            "renewable_pct": random.randint(40, 80),
-        }
 
     # -------- Internal helpers --------
 
