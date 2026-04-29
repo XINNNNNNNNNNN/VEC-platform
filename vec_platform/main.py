@@ -1,37 +1,33 @@
-"""VEC Platform - FastAPI main server with Dash mounted via WSGI middleware."""
+"""VEC Platform - FastAPI main server with Dash mounted via WSGI middleware.
 
-import json
+Layout-only entrypoint: imports the runtime singletons + each page module
+(which registers its own callbacks), wires the Dash routing callback to
+the page-level layouts, and exposes the FastAPI app object.
+"""
+
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
-from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.wsgi import WSGIMiddleware
 
-from dash import html, dcc, no_update
+from dash import html, dcc
+from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
 
-from vec_platform.config import SLOTS_PER_DAY
 # Re-export the runtime singletons so existing imports such as
 # `from vec_platform.main import get_db, calculation_engine` (used by
 # vec_platform/api/*) keep working without churn in those modules.
 from vec_platform.runtime import (
-    engine,
     SessionLocal,
     calculation_engine,
     get_db,
     dash_app,
 )
-from vec_platform.pages._helpers import (
-    _parse_session_id,
-    make_progress,
-    _slot_to_hour,
-    _get_profile_at_step,
-)
+from vec_platform.pages._helpers import _parse_session_id, make_progress
 # Importing each page module registers its Dash callbacks against
 # runtime.dash_app. Order doesn't matter as long as they're imported before
 # the first request (so before uvicorn finishes app construction).
@@ -73,9 +69,6 @@ dash_app.layout = html.Div([
 
 
 # URL routing callback
-from dash.dependencies import Input, Output, State
-
-
 @dash_app.callback(
     Output("page-content", "children"),
     Output("progress-bar", "children"),
@@ -104,10 +97,6 @@ def display_page(pathname, search):
             html.P(f"No page for: {pathname}"),
             dbc.Button("Go to Step 1", href="/dash/step1", color="primary"),
         ]), make_progress(1)
-
-
-# Step layouts/callbacks are registered via the `from vec_platform.pages
-# import stepN` statements at the top of this file.
 
 
 # ==================== FastAPI App ====================
