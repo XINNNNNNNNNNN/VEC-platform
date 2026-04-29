@@ -25,17 +25,21 @@ def _parse_session_id(search: str | None) -> str | None:
     return values[0] if values else None
 
 
-def make_progress(current_step: int = 1):
-    """Eight little pill-shaped badges showing where the participant is.
+def make_progress(current_step: int = 0):
+    """Nine little pill-shaped badges showing where the participant is.
+
+    v3 added a Step 0 (consent + first prior-expectation guess) at the
+    front of the journey, so the badge row now has 9 pills instead of 8
+    and uses 0-based indexing throughout (current_step ∈ {0..8}).
 
     Called from the routing callback for each step.
     """
     steps = [
-        "1. Role", "2. Profile", "3. Customize", "4. Prices",
+        "0. Welcome", "1. Role", "2. Profile", "3. Customize", "4. Prices",
         "5. Respond", "6. Compare", "7. Impacts", "8. Survey"
     ]
     items = []
-    for i, label in enumerate(steps, 1):
+    for i, label in enumerate(steps):
         if i < current_step:
             items.append(html.Span(label, className="badge bg-success me-1"))
         elif i == current_step:

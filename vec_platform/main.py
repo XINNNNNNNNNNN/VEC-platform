@@ -5,6 +5,7 @@ Layout-only entrypoint: imports the runtime singletons + each page module
 the page-level layouts, and exposes the FastAPI app object.
 """
 
+import random
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -31,6 +32,7 @@ from vec_platform.pages._helpers import _parse_session_id, make_progress
 # Importing each page module registers its Dash callbacks against
 # runtime.dash_app. Order doesn't matter as long as they're imported before
 # the first request (so before uvicorn finishes app construction).
+from vec_platform.pages import step0 as _step0
 from vec_platform.pages import step1 as _step1
 from vec_platform.pages import step2 as _step2
 from vec_platform.pages import step4 as _step4
@@ -79,7 +81,9 @@ def display_page(pathname, search):
     """Route to the correct page based on URL."""
     session_id = _parse_session_id(search)
 
-    if pathname in (None, "/dash/", "/dash", "/dash/step1"):
+    if pathname == "/dash/step0":
+        return _step0.step0_layout(session_id), make_progress(0)
+    elif pathname in (None, "/dash/", "/dash", "/dash/step1"):
         return _step1.step1_layout(session_id), make_progress(1)
     elif pathname == "/dash/step2":
         return _step2.step2_layout(session_id), make_progress(2)
@@ -116,19 +120,30 @@ fastapi_app = FastAPI(
 # Root redirect
 @fastapi_app.get("/")
 async def root():
-    """Redirect to Step 1 with a new session."""
+    """Create a new session and redirect to Step 0.
+
+    Each session is randomly assigned to one of three info-calibration
+    arms (A/B/C) at creation time. Phase 3 will use the arm to vary the
+    framing shown on the middle page between Step 1 and Step 2; for now
+    the arm is just stamped on the row.
+    """
     session_id = str(uuid.uuid4())
-    
+    arm = random.choice(["A", "B", "C"])
+
     db = SessionLocal()
     try:
         from vec_platform.models import Session
-        session = Session(id=session_id, current_step=1)
+        session = Session(
+            id=session_id,
+            current_step=0,
+            info_calibration_arm=arm,
+        )
         db.add(session)
         db.commit()
     finally:
         db.close()
-    
-    return RedirectResponse(url=f"/dash/step1?session_id={session_id}")
+
+    return RedirectResponse(url=f"/dash/step0?session_id={session_id}")
 
 
 # Health check

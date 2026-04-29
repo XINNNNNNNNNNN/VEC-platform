@@ -44,11 +44,16 @@ def run_migrations_offline() -> None:
 
     """
     url = config.get_main_option("sqlalchemy.url")
+    # render_as_batch makes alembic emit `with op.batch_alter_table(...)`
+    # blocks for any column drop / type change / nullability flip. SQLite
+    # can't do those operations natively, so without this flag autogenerate
+    # produces migrations that fail at runtime.
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True,
     )
 
     with context.begin_transaction():
@@ -70,7 +75,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():
