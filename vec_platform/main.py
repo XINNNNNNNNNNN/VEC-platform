@@ -10,59 +10,28 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.wsgi import WSGIMiddleware
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from dash import Dash, html, dcc, no_update
+from dash import html, dcc, no_update
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-from vec_platform.config import DATABASE_URL, DEBUG, SLOTS_PER_DAY
-from vec_platform.engine import MockEngine
-
-# ==================== Database ====================
-# Schema is managed by Alembic — run `alembic upgrade head` before starting
-# the app on a fresh database. Do NOT call Base.metadata.create_all() here:
-# it would let the app silently create tables that diverge from migrations.
-engine = create_engine(DATABASE_URL, echo=DEBUG)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Global calculation engine
-calculation_engine = MockEngine()
-
-
-def get_db():
-    """Get database session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# ==================== Dash App ====================
-dash_app = Dash(
-    __name__,
-    requests_pathname_prefix="/dash/",
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
-    suppress_callback_exceptions=True,
+from vec_platform.config import SLOTS_PER_DAY
+# Re-export the runtime singletons so existing imports such as
+# `from vec_platform.main import get_db, calculation_engine` (used by
+# vec_platform/api/*) keep working without churn in those modules.
+from vec_platform.runtime import (
+    engine,
+    SessionLocal,
+    calculation_engine,
+    get_db,
+    dash_app,
 )
-
-# Progress bar component
-def make_progress(current_step: int = 1):
-    steps = [
-        "1. Role", "2. Profile", "3. Customize", "4. Prices",
-        "5. Respond", "6. Compare", "7. Impacts", "8. Survey"
-    ]
-    items = []
-    for i, label in enumerate(steps, 1):
-        if i < current_step:
-            items.append(html.Span(label, className="badge bg-success me-1"))
-        elif i == current_step:
-            items.append(html.Span(label, className="badge bg-primary me-1"))
-        else:
-            items.append(html.Span(label, className="badge bg-secondary me-1"))
-    return html.Div(items, className="mb-3")
+from vec_platform.pages._helpers import (
+    _parse_session_id,
+    make_progress,
+    _slot_to_hour,
+    _get_profile_at_step,
+)
 
 
 # Dash layout
@@ -96,14 +65,6 @@ dash_app.layout = html.Div([
 
 # URL routing callback
 from dash.dependencies import Input, Output, State
-
-
-def _parse_session_id(search: str | None) -> str | None:
-    if not search:
-        return None
-    qs = parse_qs(search.lstrip("?"))
-    values = qs.get("session_id")
-    return values[0] if values else None
 
 
 @dash_app.callback(
@@ -303,10 +264,6 @@ _DEVICE_LABELS = {
     "washing_machine": "Washing machine",
     "ev_charger": "EV charger",
 }
-
-
-def _slot_to_hour(slot: int) -> float:
-    return slot * 15 / 60.0
 
 
 def _load_curve_figure(devices: dict, pv_generation: list, net_load: list) -> go.Figure:
@@ -740,16 +697,6 @@ def step4_layout(session_id: str | None):
 
 
 # ==================== Step 6 ====================
-
-def _get_profile_at_step(db, session_id: str, step: int):
-    from vec_platform.models import DailyProfile
-    return (
-        db.query(DailyProfile)
-        .filter(DailyProfile.session_id == session_id, DailyProfile.step == step)
-        .order_by(DailyProfile.id.desc())
-        .first()
-    )
-
 
 def _pick_scenario_bill(db, session_id: str, scenario: str, preferred_step: int):
     """Find the right bill for each scenario, falling back sensibly."""
