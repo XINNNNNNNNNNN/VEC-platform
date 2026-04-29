@@ -161,8 +161,9 @@ class MockEngine(CalculationEngine):
 
     def _get_devices(self, user_input: UserInput) -> dict:
         """Per-device 96-slot load arrays (kW)."""
+        building_type = self._derive_building_type(user_input)
         devices: dict[str, list[float]] = {
-            "base_load": self._get_base_load(user_input.building_type),
+            "base_load": self._get_base_load(building_type),
             # Cooking is short and not really shiftable, but show it.
             "cooking_am": self._device_block(28, 30, 2.0),  # 07:00-07:30
             "cooking_pm": self._device_block(72, 76, 2.0),  # 18:00-19:00
@@ -171,9 +172,7 @@ class MockEngine(CalculationEngine):
             "washing_machine": self._device_block(76, 84, 0.5),  # 19:00-21:00
         }
 
-        # Electric / heat-pump households add a water heater pre-shower.
-        if user_input.heating in {"electric", "heatpump"}:
-            devices["water_heater"] = self._device_block(20, 28, 3.0)  # 05-07
+        # v3 dropped the heating question along with the water_heater device.
 
         # EV charging late afternoon through midnight (16:00-24:00, 8h).
         # Kept non-wrapping so the Step 3 timeline can show it as a single block.
@@ -181,6 +180,26 @@ class MockEngine(CalculationEngine):
             devices["ev_charger"] = self._device_block(64, 96, 3.7)
 
         return devices
+
+    @staticmethod
+    def _derive_building_type(user_input: UserInput) -> str:
+        """Map v3 ownership + DER → v2-style building_type code.
+
+        Internal helper only; v3 no longer stores building_type in the DB. The
+        engine still drives base-load amplitude with the same archetypes:
+          tenant            -> apartment
+          owner, no PV      -> villa_noder
+          owner, PV         -> villa_pv
+          owner, PV + BESS  -> villa_pvbess
+        """
+        if user_input.ownership_type == "tenant":
+            return "apartment"
+        # owner branch
+        if user_input.has_pv and user_input.has_bess:
+            return "villa_pvbess"
+        if user_input.has_pv:
+            return "villa_pv"
+        return "villa_noder"
 
     @staticmethod
     def _device_block(start_slot: int, end_slot: int, kw: float) -> list:

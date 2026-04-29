@@ -75,10 +75,8 @@ class UserInput(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
-    building_type: Mapped[str] = mapped_column(String(50))
     area_m2: Mapped[float] = mapped_column(Float)
     people: Mapped[int] = mapped_column(Integer)
-    heating: Mapped[str] = mapped_column(String(50))
     has_ev: Mapped[bool] = mapped_column(Boolean, default=False)
     has_pv: Mapped[bool] = mapped_column(Boolean, default=False)
     pv_kwp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -86,12 +84,11 @@ class UserInput(Base):
     bess_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # ----- v3.0 fields -----
-    # Phase 3.1 will replace `building_type` (5-choice) with `ownership_type`
-    # (tenant/owner) and add an `occupation` question used for expert routing.
-    # Both columns are nullable so existing INSERTs through the v2 Step 1
-    # callback (which doesn't know about them) keep working unchanged.
-    ownership_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    occupation: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Replace v2 `building_type` (5-choice) and `heating` with these two.
+    # MockEngine derives an internal building_type code from ownership + DER.
+    ownership_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'tenant' | 'owner'
+    occupation: Mapped[str] = mapped_column(String(64), nullable=False)
+    # ^ 'energy_professional' | 'general_public' (Step 1 Q5; drives sessions.expertise)
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="user_input")
