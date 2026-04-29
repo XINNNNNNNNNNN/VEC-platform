@@ -243,6 +243,32 @@ class ExitThreshold(Base):
     )
 
 
+class WillingnessMeasurement(Base):
+    """Three measurements of willingness across the journey.
+
+    round=1 — info-calibration page, 7-point Likert ("how interested are
+              you in joining?")
+    round=2 — Step 6 (after seeing the bill comparison), 5-point Likert
+              ("would you actually consider joining?")  [Phase 3.7]
+    round=3 — Step 8 (final acceptance), 4-point scale                [Phase 3.9]
+
+    Phase 3.2b only writes round=1 rows; the other rounds land later.
+    """
+    __tablename__ = "willingness_measurements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sessions.id"), nullable=False, index=True,
+    )
+    round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 | 2 | 3
+    scale_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # ^ '7point_interest' | '5point_consider' | '4point_accept'
+    value: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False,
+    )
+
+
 # Import for type hints
 from vec_platform.models import Session, UserInput, DailyProfile, BillBreakdown, ShadowPrices, DeviceShift, DragLog, SurveyResponse
 
@@ -258,4 +284,5 @@ __all__ = [
     "SurveyResponse",
     "PriorExpectation",
     "ExitThreshold",
+    "WillingnessMeasurement",
 ]

@@ -204,4 +204,11 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
     finally:
         db.close()
 
-    return "/dash/step2", f"?session_id={session_id}", ""
+    # v3.2b: route through the tenant disclaimer (renters only) or
+    # straight to the info-calibration page (owners). Both pages
+    # eventually hand off to /dash/step2.
+    if ownership_type == "tenant":
+        next_path = "/dash/tenant_disclaimer"
+    else:
+        next_path = "/dash/info_calibration"
+    return next_path, f"?session_id={session_id}", ""

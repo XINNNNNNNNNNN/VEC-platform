@@ -39,6 +39,8 @@ from vec_platform.pages import step4 as _step4
 from vec_platform.pages import step6 as _step6
 from vec_platform.pages import step7 as _step7
 from vec_platform.pages import step8 as _step8
+from vec_platform.pages import tenant_disclaimer as _tenant_disclaimer
+from vec_platform.pages import info_calibration as _info_calibration
 
 
 # Dash layout
@@ -85,6 +87,13 @@ def display_page(pathname, search):
         return _step0.step0_layout(session_id), make_progress(0)
     elif pathname in (None, "/dash/", "/dash", "/dash/step1"):
         return _step1.step1_layout(session_id), make_progress(1)
+    elif pathname == "/dash/tenant_disclaimer":
+        # Intermediate page between Step 1 and the info-calibration arm;
+        # we keep the progress bar showing Step 1 because the participant
+        # hasn't generated a profile yet.
+        return _tenant_disclaimer.tenant_disclaimer_layout(session_id), make_progress(1)
+    elif pathname == "/dash/info_calibration":
+        return _info_calibration.info_calibration_layout(session_id), make_progress(1)
     elif pathname == "/dash/step2":
         return _step2.step2_layout(session_id), make_progress(2)
     elif pathname == "/dash/step4":
