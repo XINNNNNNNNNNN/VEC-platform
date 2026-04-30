@@ -301,10 +301,6 @@
   }
 
   // ---- Chart ----
-  const CHART_ORDER = [
-    "base_load", "cooking_am", "cooking_pm", "water_heater",
-    "dishwasher", "washing_machine", "ev_charger",
-  ];
 
   function hours() {
     const out = new Array(SLOTS_PER_DAY);
@@ -315,7 +311,9 @@
   function buildTraces(deviceArrays) {
     const x = hours();
     const traces = [];
-    // Base load first (bottom of stack).
+    // Base load first (bottom of stack). It's not in state.placed —
+    // it's the rigid background load — so it gets its own trace from
+    // state.baseLoad / DEVICE_CATALOG.base_load metadata.
     traces.push({
       x, y: state.baseLoad,
       name: DEVICE_CATALOG.base_load.label,
@@ -324,10 +322,15 @@
       line: { width: 0.5, color: DEVICE_CATALOG.base_load.color },
       hovertemplate: "%{y:.2f} kW<extra>Base load</extra>",
     });
-    for (const name of CHART_ORDER) {
-      if (name === "base_load") continue;
+    // Phase 3.7-pre patch: iterate the same canonical order used by the
+    // device list and the timeline rows, filtered to whatever the user
+    // currently has in state.placed (which is mirrored in deviceArrays).
+    // Picks up user-added types (dryer, oven_baking) automatically and
+    // drops removed ones.
+    for (const name of DEVICE_LIST_ORDER) {
       if (!(name in deviceArrays)) continue;
       const meta = DEVICE_CATALOG[name];
+      if (!meta) continue;  // defensive: unknown device type
       traces.push({
         x, y: deviceArrays[name],
         name: meta.label,
