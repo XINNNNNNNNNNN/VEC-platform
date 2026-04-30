@@ -1,19 +1,25 @@
-"""Step 4 — tomorrow's VEC shadow prices + savings card.
+"""Step 4 — tomorrow's VEC shadow prices + savings card + 2 RadioItems Qs.
 
-Pure layout module: lazily creates the ShadowPrices row on first visit,
-then reads no_vec / vec_no_adjust bills to drive a side-by-side savings
-card.
+Lazily creates the ShadowPrices row on first visit, then reads no_vec /
+vec_no_adjust bills to drive a side-by-side savings card. Phase 3.5 added
+two intent questions ("would you shift?" / "manual vs automation?") at
+the bottom; submitting them upserts step4_q1_shift_intent +
+step4_q2_control_pref onto the per-session survey_responses row and
+navigates to /step5.
+
+Importing this module registers two Dash callbacks against ``dash_app``.
 """
 
 import json
 
-from dash import html, dcc
+from dash import html, dcc, no_update
+from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
 from vec_platform.config import SLOTS_PER_DAY
-from vec_platform.runtime import SessionLocal, calculation_engine
-from vec_platform.pages._helpers import _slot_to_hour
+from vec_platform.runtime import SessionLocal, calculation_engine, dash_app
+from vec_platform.pages._helpers import _slot_to_hour, _parse_session_id
 
 
 # ==================== Step 4 ====================
@@ -255,6 +261,51 @@ def step4_layout(session_id: str | None):
             dbc.Col(_about_vec_card(), md=6),
         ], className="mb-3"),
 
+        # ----- v3.5: two intent questions -----
+        html.Hr(),
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "Looking at this VEC price pattern, would you consider "
+                    "shifting your electricity use to cheaper hours?"
+                ),
+                dcc.RadioItems(
+                    id="step4-q1-shift-intent",
+                    options=[
+                        {"label": "Yes, I'd actively try to shift", "value": "yes"},
+                        {"label": "Maybe, depending on convenience", "value": "maybe"},
+                        {"label": "No, I'd keep my routine", "value": "no"},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+            ]),
+        ], className="mb-3"),
+
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "If a VEC offered to automatically schedule some of your "
+                    "devices (e.g., washing machine, EV charging) to get the "
+                    "best prices, would you prefer:"
+                ),
+                dcc.RadioItems(
+                    id="step4-q2-control-pref",
+                    options=[
+                        {"label": "Manual control — I'll decide when to use what",
+                         "value": "manual"},
+                        {"label": "Recommendations only — show me suggestions, but I decide",
+                         "value": "recommend"},
+                        {"label": "Full automation — let the system handle it",
+                         "value": "auto"},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+                html.Div(id="step4-error", className="text-danger small mt-2"),
+            ]),
+        ], className="mb-3"),
+
         dbc.Row([
             dbc.Col(
                 dbc.Button(
@@ -268,11 +319,70 @@ def step4_layout(session_id: str | None):
             dbc.Col(
                 dbc.Button(
                     "Next → Respond to prices",
-                    href=f"/step5?session_id={session_id}",
-                    external_link=True,
+                    id="step4-next-btn",
                     color="primary",
+                    disabled=True,
                 ),
                 width="auto",
             ),
         ], justify="between"),
+
+        # /step5 lives outside the Dash mount; the root url Location has
+        # refresh=False, so we use a dedicated refresh=True Location to
+        # force a full browser navigation (same pattern as step3).
+        dcc.Location(id="step4-redirect", refresh=True),
     ])
+
+
+# ==================== callbacks ====================
+
+@dash_app.callback(
+    Output("step4-next-btn", "disabled"),
+    Input("step4-q1-shift-intent", "value"),
+    Input("step4-q2-control-pref", "value"),
+)
+def toggle_step4_next(q1, q2):
+    """Lock Next until both intent questions are answered."""
+    return q1 is None or q2 is None
+
+
+@dash_app.callback(
+    Output("step4-redirect", "href"),
+    Output("step4-error", "children"),
+    Input("step4-next-btn", "n_clicks"),
+    State("step4-q1-shift-intent", "value"),
+    State("step4-q2-control-pref", "value"),
+    State("url", "search"),
+    prevent_initial_call=True,
+)
+def submit_step4(n_clicks, q1, q2, search):
+    """Upsert the two step4_* fields onto survey_responses, then nav to /step5."""
+    if not n_clicks:
+        return no_update, no_update
+
+    session_id = _parse_session_id(search)
+    if not session_id:
+        return no_update, "Session id missing — please start from '/'."
+    if q1 is None or q2 is None:
+        return no_update, "Please answer both questions."
+
+    from vec_platform.models import Session as SessionModel
+    from vec_platform.pages._survey_helpers import get_or_create_survey_row
+
+    db = SessionLocal()
+    try:
+        sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if sess is None:
+            return no_update, "Session not found."
+
+        row = get_or_create_survey_row(db, session_id)
+        row.step4_q1_shift_intent = q1
+        row.step4_q2_control_pref = q2
+
+        if sess.current_step is None or sess.current_step < 5:
+            sess.current_step = 5
+        db.commit()
+    finally:
+        db.close()
+
+    return f"/step5?session_id={session_id}", ""

@@ -138,7 +138,11 @@ def step8_layout(session_id: str | None):
             dbc.Alert("Session not found.", color="warning"),
         ])
 
-    if already is not None:
+    # A row may exist with only the step4_* fields filled (Phase 3.5) but
+    # no q1_willingness yet — those participants still need to fill out
+    # the survey, so the thank-you gate is "did the survey actually
+    # submit", i.e. q1_willingness is non-NULL.
+    if already is not None and already.q1_willingness:
         return html.Div([
             html.H2("Step 8: Your decision"),
             _thank_you_view(),
@@ -177,10 +181,8 @@ def submit_survey(n_clicks, q1, q2, q3, q4, search):
     if not session_id:
         return no_update, "Session id missing from URL. Please start from Step 1."
 
-    from vec_platform.models import (
-        Session as SessionModel,
-        SurveyResponse,
-    )
+    from vec_platform.models import Session as SessionModel
+    from vec_platform.pages._survey_helpers import get_or_create_survey_row
 
     # Cap multi-selects at 3 so "top 3" is enforced in the data.
     q2_trim = (q2 or [])[:3]
@@ -192,20 +194,14 @@ def submit_survey(n_clicks, q1, q2, q3, q4, search):
         if session is None:
             return no_update, "Session not found. Please start from Step 1."
 
-        # Idempotency: don't insert twice if the user clicks Submit rapidly.
-        existing = (
-            db.query(SurveyResponse)
-            .filter(SurveyResponse.session_id == session_id)
-            .first()
-        )
-        if existing is None:
-            db.add(SurveyResponse(
-                session_id=session_id,
-                q1_willingness=q1,
-                q2_reasons=json.dumps(q2_trim),
-                q3_concerns=json.dumps(q3_trim),
-                q4_savings_perception=q4,
-            ))
+        # Phase 3.5: upsert. Step 4 may have already created a row with
+        # the step4_* fields filled — we just overwrite the q1-q4 cells
+        # on the same row instead of inserting a duplicate.
+        row = get_or_create_survey_row(db, session_id)
+        row.q1_willingness = q1
+        row.q2_reasons = json.dumps(q2_trim)
+        row.q3_concerns = json.dumps(q3_trim)
+        row.q4_savings_perception = q4
 
         session.completed = True
         session.current_step = 8

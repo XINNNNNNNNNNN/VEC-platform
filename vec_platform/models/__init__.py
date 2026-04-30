@@ -191,16 +191,34 @@ class DragLog(Base):
 
 
 class SurveyResponse(Base):
-    """Step 8: Final survey responses."""
+    """Per-session survey row, filled across multiple page submissions.
+
+    Step 4 inserts a row with the two ``step4_*`` fields (and NULLs for
+    everything else); Step 8 then UPSERTs to fill q1-q4. Hence q1-q4 must
+    be nullable — they're populated later in the flow than the row's
+    creation. Each session has at most one row (enforced by the upsert
+    pattern in pages/_survey_helpers.get_or_create_survey_row).
+    """
     __tablename__ = "survey_responses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
 
-    q1_willingness: Mapped[str] = mapped_column(String(50))
-    q2_reasons: Mapped[str] = mapped_column(Text)  # JSON array
-    q3_concerns: Mapped[str] = mapped_column(Text)  # JSON array
-    q4_savings_perception: Mapped[str] = mapped_column(String(50))
+    # v3.5: relaxed to nullable so Step 4 can create the row before
+    # Step 8 fills these in. Validation at the page layer still requires
+    # q1 and q4 before submit fires.
+    q1_willingness: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    q2_reasons: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    q3_concerns: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    q4_savings_perception: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # v3.5 — Step 4 selection answers.
+    step4_q1_shift_intent: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'yes' / 'maybe' / 'no'
+    step4_q2_control_pref: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'manual' / 'recommend' / 'auto'
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")
