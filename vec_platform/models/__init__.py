@@ -246,6 +246,38 @@ class SurveyResponse(Base):
         Integer, nullable=True,
     )
 
+    # v3.9 — Step 8 expansion: 3 new survey questions + 3 expert-only
+    # questions + 3 demographics fields. All nullable: experts get the
+    # expert_* trio asked, non-experts leave them NULL; demographics are
+    # asked of everyone but country defaults at submit time.
+    q5_trust_source: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True,
+    )  # 'government' / 'utility' / 'coop' / 'tech' / 'none'
+    q6_fairness_pref: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'equal' / 'proportional' / 'needs' / 'unsure'
+    q7_transparency_pref: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'minimal' / 'summary' / 'detailed' / 'full'
+    expert_q1_realism: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )  # 1..5 (very unrealistic .. very realistic)
+    expert_q2_barrier: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True,
+    )  # 'regulatory' / 'awareness' / 'tech' / 'incentives' / 'biz_model'
+    expert_q3_comment: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True,
+    )  # free-form, max 200 chars enforced client-side
+    demo_age_range: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+    )  # '18-29' / '30-39' / '40-49' / '50-59' / '60-69' / '70+'
+    demo_gender: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'male' / 'female' / 'other' / 'no_answer'
+    demo_country: Mapped[Optional[str]] = mapped_column(
+        String(8), nullable=True,
+    )  # ISO-2 country code; defaults to 'SE' at submit time
+
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")
 
@@ -285,6 +317,13 @@ class ExitThreshold(Base):
         nullable=False, index=True, unique=True,
     )
     threshold_ratio: Mapped[float] = mapped_column(Float, nullable=False)  # ∈ {1.0, 0.75, 0.5, 0.25, 0.0}
+    # v3.9 — joining-side counterpart to threshold_ratio: minimum %
+    # savings the participant would require *to join in the first place*.
+    # 0..50 inclusive. Nullable so existing rows from earlier phases
+    # (and any partial future inserts) don't break.
+    entry_threshold_pct: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True,
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
     )
