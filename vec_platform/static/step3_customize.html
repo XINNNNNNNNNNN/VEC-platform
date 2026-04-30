@@ -31,19 +31,23 @@
 
     <div id="error-banner" class="alert alert-danger d-none"></div>
 
-    <!-- v3.4: ±10% baseline scale knob (5% steps). Scales only the rigid
-         base load, not PV or shiftable devices. -->
-    <div class="card mb-3 baseline-adjust-card">
-      <div class="card-header"><strong>Adjust your baseline (optional)</strong></div>
+    <!-- Phase 3.7-pre: My devices list + Add dropdown. Replaces the old
+         recycle-bin device chips. Each device type can appear at most
+         once for now (multi-instance is a later phase). -->
+    <div class="card mb-3 device-config-card">
+      <div class="card-header"><strong>My devices</strong></div>
       <div class="card-body">
         <p class="hint text-muted small mb-2">
-          Use these buttons to scale your overall base electricity use up
-          or down by ±10%, in 5% steps.
+          These are the devices you'll configure on the timeline below.
+          Use [+ Add] to enable more devices, or × to remove one.
         </p>
-        <div class="scale-controls">
-          <button id="scale-decrement" class="scale-btn" type="button">−</button>
-          <span id="scale-display" class="scale-value">0%</span>
-          <button id="scale-increment" class="scale-btn" type="button">+</button>
+        <ul id="device-instance-list" class="device-instance-list"></ul>
+        <div class="add-device-row mt-2">
+          <select id="add-device-select" class="form-select form-select-sm">
+            <option value="">Add a device…</option>
+          </select>
+          <button id="add-device-btn" class="btn btn-sm btn-primary ms-2"
+                  type="button" disabled>+ Add</button>
         </div>
       </div>
     </div>
@@ -53,8 +57,9 @@
       <div class="card-body">
         <div id="timeline" class="timeline"></div>
         <div class="hint text-muted small mt-2">
-          Tip: devices snap to 15-minute slots. Click × to move a device back
-          to the palette below.
+          Tip: devices snap to 15-minute slots. Drag a block to move it.
+          Click × on a block (or in the My devices list above) to remove
+          a device.
         </div>
       </div>
     </div>
@@ -78,13 +83,21 @@
       </div>
     </div>
 
-    <div class="card mb-3">
-      <div class="card-header"><strong>Device palette</strong></div>
+    <!-- Phase 3.7-pre: ±10% baseline scale knob (5% steps). Scales only
+         the rigid base load. Moved here from the top of the page so the
+         participant first sees their schedule and bill, then optionally
+         adjusts. -->
+    <div class="card mb-3 baseline-adjust-card">
+      <div class="card-header"><strong>Adjust your baseline (optional)</strong></div>
       <div class="card-body">
-        <div id="palette" class="palette-list"></div>
-        <div class="text-muted small mt-2">
-          Click a palette chip to drop the device onto the timeline at its
-          default time. Click × on a block to move it back here.
+        <p class="hint text-muted small mb-2">
+          Use these buttons to scale your overall base electricity use up
+          or down by ±10%, in 5% steps.
+        </p>
+        <div class="scale-controls">
+          <button id="scale-decrement" class="scale-btn" type="button">−</button>
+          <span id="scale-display" class="scale-value">0%</span>
+          <button id="scale-increment" class="scale-btn" type="button">+</button>
         </div>
       </div>
     </div>
@@ -93,7 +106,6 @@
          here from Step 2. The participant has now seen their profile,
          dragged devices, and watched the bill update live — strongest
          "informed expectation" signal point in the journey. -->
-    <hr/>
     <div class="card mb-3 expectation-card">
       <div class="card-header"><strong>Your expectation, now that you've seen the numbers</strong></div>
       <div class="card-body">

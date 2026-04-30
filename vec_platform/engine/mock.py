@@ -160,16 +160,24 @@ class MockEngine(CalculationEngine):
         return load
 
     def _get_devices(self, user_input: UserInput) -> dict:
-        """Per-device 96-slot load arrays (kW)."""
+        """Per-device 96-slot load arrays (kW).
+
+        Phase 3.7-pre catalog (matches static/js/devices.js DEVICE_CATALOG):
+          cooking         — single dinner-time block (was cooking_am+cooking_pm)
+          dishwasher      — evening
+          washing_machine — evening, 2.0 kW (was 0.5 kW)
+          ev_charger      — only if user_input.has_ev
+        Tumble dryer and oven_baking are NOT in the baseline; they only
+        appear if the user adds them on the Step 3 page.
+        """
         building_type = self._derive_building_type(user_input)
         devices: dict[str, list[float]] = {
             "base_load": self._get_base_load(building_type),
-            # Cooking is short and not really shiftable, but show it.
-            "cooking_am": self._device_block(28, 30, 2.0),  # 07:00-07:30
-            "cooking_pm": self._device_block(72, 76, 2.0),  # 18:00-19:00
+            # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
+            "cooking": self._device_block(72, 76, 2.0),       # 18:00-19:00, 2 kW
             # Shiftable wet appliances.
-            "dishwasher": self._device_block(78, 84, 1.2),  # 19:30-21:00
-            "washing_machine": self._device_block(76, 84, 0.5),  # 19:00-21:00
+            "dishwasher": self._device_block(78, 84, 1.2),    # 19:30-21:00, 1.2 kW
+            "washing_machine": self._device_block(76, 84, 2.0),  # 19:00-21:00, 2.0 kW
         }
 
         # v3 dropped the heating question along with the water_heater device.

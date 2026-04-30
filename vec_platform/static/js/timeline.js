@@ -57,8 +57,9 @@
     container.appendChild(rigidRow);
 
     // One row per placed device, in a stable order so the visual doesn't jump.
-    const order = ["cooking_am", "cooking_pm", "dishwasher", "washing_machine",
-                   "water_heater", "ev_charger"];
+    // Order matches DEVICE_CATALOG declaration order (Phase 3.7-pre).
+    const order = ["cooking", "dishwasher", "washing_machine",
+                   "dryer", "oven_baking", "ev_charger"];
 
     for (const name of order) {
       if (!(name in state.placed)) continue;
@@ -195,7 +196,8 @@
       action: "add",
     }).catch((err) => console.warn("drag-log failed", err));
     renderTimeline();
-    renderPalette();
+    renderDeviceList();
+    renderAddSelect();
     refreshChartAndBill();
   }
 
@@ -214,35 +216,88 @@
     }).catch((err) => console.warn("drag-log failed", err));
     delete state.placed[name];
     renderTimeline();
-    renderPalette();
+    renderDeviceList();
+    renderAddSelect();
     refreshChartAndBill();
   }
 
-  // ---- Palette ----
-  function renderPalette() {
-    const el = $("palette");
-    el.innerHTML = "";
-    let hasAvailable = false;
-    for (const [name, meta] of Object.entries(DEVICE_CATALOG)) {
-      if (!meta.draggable) continue;
-      if (name in state.placed) continue;
-      if (!(name in state.originalPositions)) continue;  // device not in this household
+  // ---- Phase 3.7-pre: My devices list + Add dropdown ----
+  // Render order shared with renderTimeline() so the list and the
+  // timeline visually agree.
+  const DEVICE_LIST_ORDER = ["cooking", "dishwasher", "washing_machine",
+                             "dryer", "oven_baking", "ev_charger"];
 
-      const btn = document.createElement("button");
-      btn.className = "palette-item";
-      btn.type = "button";
-      btn.style.background = meta.color;
-      btn.textContent = `+ ${meta.label}`;
-      btn.addEventListener("click", () => addDevice(name));
-      el.appendChild(btn);
-      hasAvailable = true;
+  function renderDeviceList() {
+    const ul = $("device-instance-list");
+    if (!ul) return;
+    ul.innerHTML = "";
+    const present = DEVICE_LIST_ORDER.filter((n) => n in state.placed);
+    if (present.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "device-instance-empty";
+      empty.textContent = "No devices configured. Use [+ Add] below.";
+      ul.appendChild(empty);
+      return;
     }
-    if (!hasAvailable) {
-      const muted = document.createElement("div");
-      muted.className = "text-muted small";
-      muted.textContent = "All your devices are on the timeline.";
-      el.appendChild(muted);
+    for (const name of present) {
+      const meta = DEVICE_CATALOG[name];
+      const pos = state.placed[name];
+      const li = document.createElement("li");
+      li.className = "device-instance";
+      li.dataset.device = name;
+
+      const swatch = document.createElement("span");
+      swatch.className = "device-color-swatch";
+      swatch.style.background = meta.color;
+      li.appendChild(swatch);
+
+      const label = document.createElement("span");
+      label.className = "device-instance-label";
+      label.textContent = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
+      li.appendChild(label);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "device-remove-btn";
+      removeBtn.type = "button";
+      removeBtn.textContent = "×";
+      removeBtn.title = `Remove ${meta.label}`;
+      removeBtn.addEventListener("click", () => removeDevice(name));
+      li.appendChild(removeBtn);
+
+      ul.appendChild(li);
     }
+  }
+
+  function renderAddSelect() {
+    const select = $("add-device-select");
+    const btn = $("add-device-btn");
+    if (!select || !btn) return;
+    const previous = select.value;
+    select.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Add a device…";
+    select.appendChild(placeholder);
+
+    let count = 0;
+    for (const name of DEVICE_LIST_ORDER) {
+      const meta = DEVICE_CATALOG[name];
+      if (!meta || !meta.draggable) continue;
+      if (name in state.placed) continue;  // single-instance: hide if present
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = meta.label;
+      select.appendChild(opt);
+      count++;
+    }
+    select.disabled = count === 0;
+    // Re-select previous choice if still in the dropdown (could have been
+    // removed by an earlier addDevice).
+    if (previous && [...select.options].some((o) => o.value === previous)) {
+      select.value = previous;
+    }
+    // Enable Add button only when a device type is actually selected.
+    btn.disabled = count === 0 || !select.value;
   }
 
   // ---- Chart ----
@@ -394,7 +449,8 @@
     state.originalBill = VECCompute.computeBillScenario(profile.net_load, "no_vec");
 
     renderTimeline();
-    renderPalette();
+    renderDeviceList();
+    renderAddSelect();
     refreshChartAndBill();
   }
 
@@ -459,9 +515,27 @@
         state.placed[name] = { ...pos };
       }
       renderTimeline();
-      renderPalette();
+      renderDeviceList();
+      renderAddSelect();
       refreshChartAndBill();
     });
+
+    // Phase 3.7-pre: Add device dropdown wiring.
+    const addSelect = $("add-device-select");
+    const addBtn = $("add-device-btn");
+    if (addSelect && addBtn) {
+      // Enable the Add button only when a device type is actually picked.
+      addSelect.addEventListener("change", () => {
+        addBtn.disabled = !addSelect.value;
+      });
+      addBtn.addEventListener("click", () => {
+        const name = addSelect.value;
+        if (!name) return;
+        addDevice(name);  // single-instance: addDevice no-ops if already placed
+        addSelect.value = "";
+        addBtn.disabled = true;
+      });
+    }
 
     $("btn-confirm").addEventListener("click", async () => {
       const btn = $("btn-confirm");

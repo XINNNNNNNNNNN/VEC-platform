@@ -1,7 +1,13 @@
 // Device catalog + pricing constants for Step 3 live preview.
 //
-// `start_slot` and `duration_slots` below MUST match MockEngine defaults
-// in vec_platform/engine/mock.py so Step 3's initial render matches Step 2.
+// `default_start` and `default_duration` below MUST match MockEngine
+// defaults in vec_platform/engine/mock.py so Step 3's initial render
+// matches Step 2.
+//
+// Phase 3.7-pre (option A): single-instance catalog. Each device type
+// can appear at most once in the user's "My devices" list. Multi-instance
+// support (e.g., two EV chargers) is deferred to a later phase that also
+// redesigns Step 5's per-instance willingness state.
 
 const SLOTS_PER_DAY = 96;
 const SLOT_HOURS = 0.25;  // 15 min
@@ -14,64 +20,79 @@ const PRICE_TAX = 0.45;
 const PRICE_FEED_IN = 0.95;
 const PRICE_VEC_INTERNAL_SELL = 1.05;
 
-// Per the Step 3 prompt:
-//   洗衣机蓝色 · 烘干机橙色 · 洗碗机绿色 · EV紫色 · 热水器红色 · 烹饪黄色
-// Base load (fridge / lighting / standby / baseline peaks) is grey and
-// cannot be moved — the occupant's underlying rhythm, not a shiftable appliance.
+// Naming convention sticks with snake_case to match the existing
+// callers in timeline.js + step5.js (default_start / default_duration /
+// load_kw). Spec used camelCase but switching would force changes
+// across both modules.
+//
+// `default_include`             — device is on My-devices list by default
+// `default_include_when_has_ev` — device is on the list only if user picked
+//                                 has_ev in Step 1 (used for ev_charger)
+//
+// `base_load` is kept here (not draggable, not addable) so timeline.js's
+// existing chart trace code (uses DEVICE_CATALOG.base_load.label/color)
+// works without changes. It's filtered out of the My-devices list and
+// the Add dropdown.
 const DEVICE_CATALOG = {
   base_load: {
-    label: "Base load",
+    label: "Base load (lighting, fridge, peaks)",
     color: "#6c757d",
     draggable: false,
-    load_kw: null, // varies across slots
+    load_kw: null,  // varies across slots
   },
-  cooking_am: {
-    label: "Cooking — morning",
-    color: "#f1c40f",
+  cooking: {
+    label: "Stove (cooking)",
+    color: "#F4B731",  // yellow
     draggable: true,
-    default_start: 28, // 07:00
-    default_duration: 2, // 30 min
+    default_start: 72,        // 18:00
+    default_duration: 4,      // 1 h
     load_kw: 2.0,
-  },
-  cooking_pm: {
-    label: "Cooking — evening",
-    color: "#f39c12",
-    draggable: true,
-    default_start: 72, // 18:00
-    default_duration: 4, // 1 h
-    load_kw: 2.0,
+    default_include: true,
   },
   dishwasher: {
     label: "Dishwasher",
-    color: "#2ecc71",
+    color: "#22C55E",  // green
     draggable: true,
-    default_start: 78, // 19:30
-    default_duration: 6, // 1.5 h
+    default_start: 78,        // 19:30
+    default_duration: 6,      // 1.5 h
     load_kw: 1.2,
+    default_include: true,
   },
   washing_machine: {
     label: "Washing machine",
-    color: "#3498db",
+    color: "#3B82F6",  // blue
     draggable: true,
-    default_start: 76, // 19:00
-    default_duration: 8, // 2 h
-    load_kw: 0.5,
+    default_start: 76,        // 19:00
+    default_duration: 8,      // 2 h
+    load_kw: 2.0,             // ← Phase 3.7-pre: bumped from 0.5
+    default_include: true,
   },
-  water_heater: {
-    label: "Water heater",
-    color: "#e74c3c",
+  dryer: {
+    label: "Tumble dryer",
+    color: "#F97316",  // orange
     draggable: true,
-    default_start: 20, // 05:00
-    default_duration: 8, // 2 h
-    load_kw: 3.0,
+    default_start: 84,        // 21:00
+    default_duration: 6,      // 1.5 h
+    load_kw: 2.5,
+    default_include: false,   // user must Add to enable
+  },
+  oven_baking: {
+    label: "Oven (baking)",
+    color: "#DC2626",  // red
+    draggable: true,
+    default_start: 68,        // 17:00
+    default_duration: 4,      // 1 h
+    load_kw: 2.5,
+    default_include: false,   // user must Add to enable
   },
   ev_charger: {
     label: "EV charger",
-    color: "#9b59b6",
+    color: "#A855F7",  // purple
     draggable: true,
-    default_start: 64, // 16:00
-    default_duration: 32, // 8 h
+    default_start: 64,        // 16:00
+    default_duration: 32,     // 8 h
     load_kw: 3.7,
+    default_include_when_has_ev: true,
   },
 };
 

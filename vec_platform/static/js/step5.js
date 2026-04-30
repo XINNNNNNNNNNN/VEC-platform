@@ -62,9 +62,13 @@
     return axis;
   }
 
+  // Phase 3.7-pre: device list collapsed (cooking_am+cooking_pm -> cooking,
+  // water_heater dropped) and dryer/oven_baking added. Order matches
+  // DEVICE_CATALOG declaration so the rendered timeline / cards mirror
+  // Step 3's "My devices" list.
   const DEVICE_ROW_ORDER = [
-    "cooking_am", "cooking_pm", "dishwasher", "washing_machine",
-    "water_heater", "ev_charger",
+    "cooking", "dishwasher", "washing_machine",
+    "dryer", "oven_baking", "ev_charger",
   ];
 
   function renderTimeline() {
