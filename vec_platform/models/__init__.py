@@ -239,6 +239,13 @@ class SurveyResponse(Base):
         Integer, nullable=True,
     )
 
+    # v3.8 — Step 7 broader-impacts shift Likert. "Now that you've seen
+    # the policy / grid / environment tabs, has this changed your view
+    # about joining a VEC?" 1=much less interested .. 5=much more.
+    step7_broader_impacts_shift: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")
 

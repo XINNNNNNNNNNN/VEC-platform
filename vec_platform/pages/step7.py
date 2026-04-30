@@ -1,17 +1,22 @@
 """Step 7 — broader impacts (Policy / Grid / Environment tabs).
 
 Session-specific numbers are derived from Step 2 vs Step 5 net-loads in
-``_compute_impacts``.
+``_compute_impacts``. Phase 3.8 added a single 5-point Likert below the
+tabs ("has this changed your view about joining a VEC?"), persisted as
+survey_responses.step7_broader_impacts_shift via the upsert helper.
+
+Importing this module registers two Dash callbacks against ``dash_app``.
 """
 
 import json
 
-from dash import html, dcc
+from dash import html, dcc, no_update
+from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-from vec_platform.runtime import SessionLocal
-from vec_platform.pages._helpers import _get_profile_at_step
+from vec_platform.runtime import SessionLocal, dash_app
+from vec_platform.pages._helpers import _get_profile_at_step, _parse_session_id
 
 
 # ==================== Step 7 ====================
@@ -261,6 +266,32 @@ def step7_layout(session_id: str | None):
             "Flip through the tabs below."
         ),
         tabs,
+
+        # ----- v3.8: broader-impacts Likert -----
+        html.Hr(),
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "Now that you've seen how VECs affect policy, the grid, "
+                    "and the environment, has this changed your view about "
+                    "joining one?"
+                ),
+                dcc.RadioItems(
+                    id="step7-broader-impacts-shift",
+                    options=[
+                        {"label": "1 — It made me much less interested",   "value": 1},
+                        {"label": "2 — It made me a bit less interested",  "value": 2},
+                        {"label": "3 — No change",                          "value": 3},
+                        {"label": "4 — It made me a bit more interested",  "value": 4},
+                        {"label": "5 — It made me much more interested",   "value": 5},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+                html.Div(id="step7-error", className="text-danger small mt-2"),
+            ]),
+        ], className="mb-3"),
+
         dbc.Row([
             dbc.Col(
                 dbc.Button(
@@ -273,10 +304,67 @@ def step7_layout(session_id: str | None):
             dbc.Col(
                 dbc.Button(
                     "Next → Final survey",
-                    href=f"/dash/step8?session_id={session_id}",
+                    id="step7-next-btn",
                     color="primary",
+                    disabled=True,
                 ),
                 width="auto",
             ),
         ], justify="between"),
+
+        # /dash/step8 lives within the Dash mount; refresh=True is kept
+        # for symmetry with Step 4/6 redirect Locations (a forced reload
+        # is harmless since we're navigating anyway).
+        dcc.Location(id="step7-redirect", refresh=True),
     ])
+
+
+# ==================== callbacks ====================
+
+@dash_app.callback(
+    Output("step7-next-btn", "disabled"),
+    Input("step7-broader-impacts-shift", "value"),
+)
+def toggle_step7_next(v):
+    """Lock Next until the Likert is picked."""
+    return v is None
+
+
+@dash_app.callback(
+    Output("step7-redirect", "href"),
+    Output("step7-error", "children"),
+    Input("step7-next-btn", "n_clicks"),
+    State("step7-broader-impacts-shift", "value"),
+    State("url", "search"),
+    prevent_initial_call=True,
+)
+def submit_step7(n_clicks, q, search):
+    """Upsert Q7 onto survey_responses, then nav to /dash/step8."""
+    if not n_clicks:
+        return no_update, no_update
+
+    session_id = _parse_session_id(search)
+    if not session_id:
+        return no_update, "Session id missing — please start from '/'."
+    if q is None:
+        return no_update, "Please select an option."
+
+    from vec_platform.models import Session as SessionModel
+    from vec_platform.pages._survey_helpers import get_or_create_survey_row
+
+    db = SessionLocal()
+    try:
+        sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if sess is None:
+            return no_update, "Session not found."
+
+        row = get_or_create_survey_row(db, session_id)
+        row.step7_broader_impacts_shift = int(q)
+
+        if sess.current_step is None or sess.current_step < 8:
+            sess.current_step = 8
+        db.commit()
+    finally:
+        db.close()
+
+    return f"/dash/step8?session_id={session_id}", ""
