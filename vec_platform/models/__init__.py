@@ -220,6 +220,16 @@ class SurveyResponse(Base):
         String(16), nullable=True,
     )  # 'manual' / 'recommend' / 'auto'
 
+    # v3.6 — Step 5 counterfactual + perceived effort follow-ups.
+    # Asked after the participant has dragged devices in response to
+    # shadow prices on Step 5; piggybacked on the first device-shift POST.
+    step5_q1_counterfactual: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'yes' / 'no' / 'maybe'
+    step5_q2_effort: Mapped[Optional[str]] = mapped_column(
+        String(16), nullable=True,
+    )  # 'easy' / 'acceptable' / 'disruptive' / 'none'
+
     # v3.7 — Step 6 disappointment Likert (1=much less than expected ..
     # 5=much more than expected). The companion 5-point "would you
     # consider joining?" Likert lives in willingness_measurements with

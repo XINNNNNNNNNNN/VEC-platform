@@ -37,6 +37,14 @@ class DeviceShiftCreate(BaseModel):
     prior_expectation_pct: Optional[float] = None
     confidence: Optional[int] = None
 
+    # v3.6 piggyback fields. Step 5's confirm flow collects a counter-
+    # factual ("if savings were 2x, would you shift more?") and a
+    # perceived-effort question. Same first-shift-only pattern; backend
+    # upserts into survey_responses when step == 5 and both are present.
+    step5_q1_counterfactual: Optional[str] = None  # 'yes' / 'no' / 'maybe'
+    step5_q2_effort: Optional[str] = None
+    # ^ 'easy' / 'acceptable' / 'disruptive' / 'none'
+
 
 class DragLogCreate(BaseModel):
     session_id: str
@@ -98,6 +106,22 @@ def create_device_shift(
                 pct=float(data.prior_expectation_pct),
                 confidence=int(data.confidence),
             ))
+
+    # v3.6: piggyback the counterfactual + effort answers from Step 5's
+    # confirm flow. Same idempotent pattern: only writes when step == 5,
+    # both fields are sent, and the row doesn't already have step5_*
+    # filled — defends against the frontend accidentally sending the
+    # fields on multiple shift calls.
+    if (
+        data.step == 5
+        and data.step5_q1_counterfactual is not None
+        and data.step5_q2_effort is not None
+    ):
+        from vec_platform.pages._survey_helpers import get_or_create_survey_row
+        row = get_or_create_survey_row(db, data.session_id)
+        if row.step5_q1_counterfactual is None and row.step5_q2_effort is None:
+            row.step5_q1_counterfactual = data.step5_q1_counterfactual
+            row.step5_q2_effort = data.step5_q2_effort
 
     db.commit()
     db.refresh(shift)

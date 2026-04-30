@@ -77,13 +77,50 @@
       </div>
     </div>
 
+    <!-- v3.6: counterfactual + perceived-effort follow-ups. Asked
+         after the participant has dragged devices in response to the
+         shadow prices. Both must be answered before Confirm enables. -->
+    <hr/>
+    <div class="card mb-3 counterfactual-card">
+      <div class="card-header"><strong>If conditions were different…</strong></div>
+      <div class="card-body">
+        <h5 class="mb-3">
+          If the savings from shifting your devices were
+          <strong>twice</strong> what you saw, would you change more
+          devices?
+        </h5>
+        <div class="likert-group">
+          <label><input type="radio" name="step5-q1-counterfactual" value="yes"/> Yes, I'd shift more</label>
+          <label><input type="radio" name="step5-q1-counterfactual" value="no"/> No, I'd still keep my current routine</label>
+          <label><input type="radio" name="step5-q1-counterfactual" value="maybe"/> Maybe, depending on which devices</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3 effort-card">
+      <div class="card-header"><strong>How did it feel?</strong></div>
+      <div class="card-body">
+        <h5 class="mb-3">
+          Compared to your current routine, how much extra effort did
+          changing device times feel like?
+        </h5>
+        <div class="likert-group">
+          <label><input type="radio" name="step5-q2-effort" value="easy"/> Very little — easy</label>
+          <label><input type="radio" name="step5-q2-effort" value="acceptable"/> Some effort, but acceptable</label>
+          <label><input type="radio" name="step5-q2-effort" value="disruptive"/> A lot — disruptive</label>
+          <label><input type="radio" name="step5-q2-effort" value="none"/> I didn't change anything</label>
+        </div>
+        <div id="step5-cf-error" class="error-text"></div>
+      </div>
+    </div>
+
     <div class="d-flex justify-content-between align-items-center mb-4">
       <a id="btn-back" class="btn btn-secondary">← Back to Step 4</a>
       <div>
         <button id="btn-reset" class="btn btn-outline-warning me-2" type="button">
           Reset to Step 3 schedule
         </button>
-        <button id="btn-confirm" class="btn btn-primary" type="button">
+        <button id="btn-confirm" class="btn btn-primary" type="button" disabled>
           Confirm → Step 6
         </button>
       </div>

@@ -17,6 +17,55 @@ from vec_platform.config import (
 DAYS_PER_MONTH = 30
 
 
+# v3.6: hardcoded representative SE3 summer day with strong PV surplus
+# at midday. 96 slots (15-min granularity). SEK/kWh, includes grid fee
+# and energy tax (consumer-facing retail price).
+#
+# Shape rationale:
+#   00:00-06:00 (slots 0-23):    low demand,   ~0.30 SEK/kWh
+#   06:00-09:00 (slots 24-35):   morning peak, ~0.85
+#   09:00-11:00 (slots 36-43):   PV ramping,   ~0.40 declining
+#   11:00-14:00 (slots 44-55):   PV surplus,   ~0.05-0.10 (trough)
+#   14:00-17:00 (slots 56-67):   PV decline,   ~0.45
+#   17:00-21:00 (slots 68-83):   evening peak, ~0.95
+#   21:00-24:00 (slots 84-95):   wind-down,    ~0.50
+#
+# Placeholder values for development. Replace with real Nord Pool CSV
+# before pilot launch. Keep this list at exactly 96 floats.
+_SE3_SUMMER_RETAIL_SEK_PER_KWH = [
+    # 00:00 - 06:00 (24 slots): low demand
+    0.32, 0.30, 0.29, 0.28, 0.27, 0.27, 0.27, 0.28,  # 0-2h
+    0.28, 0.29, 0.29, 0.30, 0.31, 0.32, 0.33, 0.35,  # 2-4h
+    0.38, 0.42, 0.46, 0.51, 0.55, 0.60, 0.66, 0.74,  # 4-6h
+    # 06:00 - 09:00 (12 slots): morning peak
+    0.82, 0.86, 0.88, 0.89, 0.90, 0.91, 0.91, 0.90,  # 6-8h
+    0.88, 0.84, 0.78, 0.70,                           # 8-9h
+    # 09:00 - 11:00 (8 slots): PV ramping
+    0.62, 0.55, 0.48, 0.42, 0.36, 0.30, 0.24, 0.18,  # 9-11h
+    # 11:00 - 14:00 (12 slots): PV surplus trough
+    0.13, 0.09, 0.06, 0.05, 0.05, 0.06, 0.07, 0.08,  # 11-13h
+    0.10, 0.13, 0.17, 0.22,                           # 13-14h
+    # 14:00 - 17:00 (12 slots): PV declining
+    0.28, 0.34, 0.39, 0.42, 0.45, 0.47, 0.49, 0.52,  # 14-16h
+    0.56, 0.62, 0.69, 0.78,                           # 16-17h
+    # 17:00 - 21:00 (16 slots): evening peak
+    0.86, 0.92, 0.96, 0.98, 0.99, 1.00, 0.99, 0.97,  # 17-19h
+    0.95, 0.93, 0.89, 0.85, 0.79, 0.72, 0.65, 0.58,  # 19-21h
+    # 21:00 - 24:00 (12 slots): wind-down
+    0.52, 0.48, 0.45, 0.43, 0.41, 0.39, 0.38, 0.36,  # 21-23h
+    0.34, 0.33, 0.32, 0.31,                           # 23-24h
+]
+assert len(_SE3_SUMMER_RETAIL_SEK_PER_KWH) == 96, (
+    f"SE3 hardcoded curve must have 96 slots, "
+    f"got {len(_SE3_SUMMER_RETAIL_SEK_PER_KWH)}"
+)
+
+# Mechanical derivations from retail (no time-of-day variation).
+_VEC_INTERNAL_BUY_DISCOUNT = 0.85   # internal_buy = retail × 0.85
+_VEC_INTERNAL_SELL_PRICE   = 1.05   # SEK/kWh, flat
+_FEED_IN_PRICE             = 0.95   # SEK/kWh, flat
+
+
 class MockEngine(CalculationEngine):
     """Mock engine with fake data for development."""
 
@@ -101,31 +150,21 @@ class MockEngine(CalculationEngine):
         )
 
     def get_shadow_prices(self, session_id: str) -> ShadowPrices:
-        """Get mock shadow prices (same for all users)."""
+        """Return per-slot prices for Step 4/5 visualisation.
 
-        retail = []
-        internal_buy = []
-        internal_sell = []
-        feed_in = []
+        v3.6: retail comes from the hardcoded SE3 summer curve
+        (representative PV-surplus day). Internal pricing is mechanically
+        derived: internal_buy = retail × 0.85, sell/feed_in are flat.
 
-        for slot in range(SLOTS_PER_DAY):
-            hour = slot * 15 // 60
-
-            if 7 <= hour < 9 or 17 <= hour < 21:
-                retail_price = RETAIL_PRICE_BASE + 0.5
-            elif 22 <= hour or hour < 6:
-                retail_price = RETAIL_PRICE_BASE - 0.3
-            else:
-                retail_price = RETAIL_PRICE_BASE
-            retail.append(round(retail_price, 2))
-
-            if 10 <= hour < 14:
-                internal_buy.append(VEC_INTERNAL_BUY - 0.1)
-            else:
-                internal_buy.append(VEC_INTERNAL_BUY)
-
-            internal_sell.append(VEC_INTERNAL_SELL)
-            feed_in.append(FEED_IN_PRICE)
+        Returns a ``ShadowPrices`` ORM row (caller does ``db.add(row)``);
+        the return shape was kept as the ORM model, not a plain dict, so
+        existing callers in api/shadow_price.py and pages/step4.py keep
+        working unchanged.
+        """
+        retail = list(_SE3_SUMMER_RETAIL_SEK_PER_KWH)
+        internal_buy = [round(p * _VEC_INTERNAL_BUY_DISCOUNT, 4) for p in retail]
+        internal_sell = [_VEC_INTERNAL_SELL_PRICE] * SLOTS_PER_DAY
+        feed_in = [_FEED_IN_PRICE] * SLOTS_PER_DAY
 
         return ShadowPrices(
             session_id=session_id,

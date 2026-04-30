@@ -519,6 +519,34 @@
     }
   }
 
+  // v3.6 helpers — Step 5 counterfactual + perceived-effort questions.
+  function getCounterfactualAnswers() {
+    const q1El = document.querySelector('input[name="step5-q1-counterfactual"]:checked');
+    const q2El = document.querySelector('input[name="step5-q2-effort"]:checked');
+    return {
+      q1: q1El ? q1El.value : null,
+      q2: q2El ? q2El.value : null,
+    };
+  }
+
+  function updateConfirmEnabled() {
+    // Confirm enables once both counterfactual questions are answered.
+    // Existing willingness UI doesn't gate Confirm (default willing=true
+    // is set per-device on render, so it's always answered already).
+    const { q1, q2 } = getCounterfactualAnswers();
+    const btn = $("btn-confirm");
+    if (btn) btn.disabled = !(q1 && q2);
+  }
+
+  function setupCounterfactualGate() {
+    document.querySelectorAll(
+      'input[name="step5-q1-counterfactual"], input[name="step5-q2-effort"]'
+    ).forEach((radio) => {
+      radio.addEventListener("change", updateConfirmEnabled);
+    });
+    updateConfirmEnabled();  // initial state (both null → disabled)
+  }
+
   // ---- Buttons ----
   function setupButtons() {
     $("btn-reset").addEventListener("click", () => {
@@ -535,17 +563,31 @@
 
     $("btn-confirm").addEventListener("click", async () => {
       const btn = $("btn-confirm");
+      const errEl = $("step5-cf-error");
+      if (errEl) errEl.textContent = "";
+
+      // Defensive: button is disabled until both Qs are answered, but
+      // re-check in case of synthetic clicks.
+      const { q1: cf_q1, q2: cf_q2 } = getCounterfactualAnswers();
+      if (!cf_q1 || !cf_q2) {
+        if (errEl) errEl.textContent = "Please answer both questions about your experience.";
+        return;
+      }
+
       btn.disabled = true;
       btn.textContent = "Saving…";
       try {
-        // Persist each device's shift + willingness.
+        // Persist each device's shift + willingness. The FIRST shift
+        // call also carries the v3.6 counterfactual + effort answers
+        // (piggyback pattern, same as Step 3's prior_expectation_pct).
         const shiftCalls = [];
+        let firstShiftSent = false;
         for (const name of Object.keys(state.placed)) {
           const orig = state.originalPositions[name];
           const pos = state.placed[name];
           const will = state.willingness[name];
           const reasons = will.willing ? null : Array.from(will.reasons).join(",") || null;
-          shiftCalls.push(VECApi.saveDeviceShift({
+          const payload = {
             session_id: state.sessionId,
             step: STEP,
             device_name: name,
@@ -555,7 +597,13 @@
             final_end: pos.start + pos.duration,
             willing: will.willing,
             unwilling_reason: reasons,
-          }));
+          };
+          if (!firstShiftSent) {
+            payload.step5_q1_counterfactual = cf_q1;
+            payload.step5_q2_effort = cf_q2;
+            firstShiftSent = true;
+          }
+          shiftCalls.push(VECApi.saveDeviceShift(payload));
         }
         await Promise.all(shiftCalls);
 
@@ -595,6 +643,7 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     renderProgressBar();
+    setupCounterfactualGate();
     setupButtons();
     loadInitial();
   });
