@@ -220,6 +220,15 @@ class SurveyResponse(Base):
         String(16), nullable=True,
     )  # 'manual' / 'recommend' / 'auto'
 
+    # v3.7 — Step 6 disappointment Likert (1=much less than expected ..
+    # 5=much more than expected). The companion 5-point "would you
+    # consider joining?" Likert lives in willingness_measurements with
+    # round=2 (kept in that table to keep all three willingness
+    # measurements — info_calibration / step6 / step8 — uniform).
+    step6_expectation_vs_reality: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")
 

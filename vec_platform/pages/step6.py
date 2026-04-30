@@ -1,19 +1,33 @@
-"""Step 6 — three-way bill comparison.
+"""Step 6 — three-way bill comparison + disappointment & consider Likerts.
 
-Pure layout module. Pulls per-scenario bills (preferring the right
-``step``) plus Step 2/3/5 profiles, builds three summary cards, a
-breakdown table and a three-line net-load chart.
+Pulls per-scenario bills (preferring the right ``step``) plus Step 2/3/5
+profiles, builds three summary cards, a breakdown table and a three-line
+net-load chart. Phase 3.7 added two follow-up questions at the bottom:
+
+  Q6-1 disappointment vs expectation — 5-point Likert, persisted on
+       survey_responses.step6_expectation_vs_reality
+  Q6-2 would-you-consider Likert — 5-point, persisted as
+       willingness_measurements(round=2, scale_type='5point_consider')
+       to keep all three willingness measurements (info_calibration /
+       Step 6 / Step 8) in one uniform table
+
+Importing this module registers two Dash callbacks against ``dash_app``.
 """
 
 import json
 
-from dash import html, dcc
+from dash import html, dcc, no_update
+from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
 from vec_platform.config import SLOTS_PER_DAY
-from vec_platform.runtime import SessionLocal
-from vec_platform.pages._helpers import _slot_to_hour, _get_profile_at_step
+from vec_platform.runtime import SessionLocal, dash_app
+from vec_platform.pages._helpers import (
+    _slot_to_hour,
+    _get_profile_at_step,
+    _parse_session_id,
+)
 
 
 # ==================== Step 6 ====================
@@ -248,6 +262,52 @@ def step6_layout(session_id: str | None):
             )),
         ], className="mb-3"),
 
+        # ----- v3.7: disappointment + consider Likerts -----
+        html.Hr(),
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "Looking at how much the three options would actually save "
+                    "you, how does this compare to what you expected before "
+                    "seeing your own profile?"
+                ),
+                dcc.RadioItems(
+                    id="step6-expectation-vs-reality",
+                    options=[
+                        {"label": "1 — Much less than I expected",  "value": 1},
+                        {"label": "2 — Less than I expected",       "value": 2},
+                        {"label": "3 — About what I expected",      "value": 3},
+                        {"label": "4 — More than I expected",       "value": 4},
+                        {"label": "5 — Much more than I expected",  "value": 5},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+            ]),
+        ], className="mb-3"),
+
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "Now that you've seen the comparison, would you consider "
+                    "joining a VEC?"
+                ),
+                dcc.RadioItems(
+                    id="step6-consider-willingness",
+                    options=[
+                        {"label": "1 — Definitely not",   "value": 1},
+                        {"label": "2 — Probably not",     "value": 2},
+                        {"label": "3 — Maybe",            "value": 3},
+                        {"label": "4 — Probably yes",     "value": 4},
+                        {"label": "5 — Definitely yes",   "value": 5},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+                html.Div(id="step6-error", className="text-danger small mt-2"),
+            ]),
+        ], className="mb-3"),
+
         dbc.Row([
             dbc.Col(
                 dbc.Button(
@@ -261,10 +321,95 @@ def step6_layout(session_id: str | None):
             dbc.Col(
                 dbc.Button(
                     "Next → Broader impacts",
-                    href=f"/dash/step7?session_id={session_id}",
+                    id="step6-next-btn",
                     color="primary",
+                    disabled=True,
                 ),
                 width="auto",
             ),
         ], justify="between"),
+
+        # /dash/step7 lives within the Dash mount, so this could in
+        # principle ride on the root url Location's pathname. We keep a
+        # dedicated refresh=True Location for symmetry with Step 4 (whose
+        # downstream /step5 is outside the Dash mount and DOES need the
+        # full reload). Either works for /dash/step7.
+        dcc.Location(id="step6-redirect", refresh=True),
     ])
+
+
+# ==================== callbacks ====================
+
+@dash_app.callback(
+    Output("step6-next-btn", "disabled"),
+    Input("step6-expectation-vs-reality", "value"),
+    Input("step6-consider-willingness", "value"),
+)
+def toggle_step6_next(q1, q2):
+    """Lock Next until both Likert questions are answered."""
+    return q1 is None or q2 is None
+
+
+@dash_app.callback(
+    Output("step6-redirect", "href"),
+    Output("step6-error", "children"),
+    Input("step6-next-btn", "n_clicks"),
+    State("step6-expectation-vs-reality", "value"),
+    State("step6-consider-willingness", "value"),
+    State("url", "search"),
+    prevent_initial_call=True,
+)
+def submit_step6(n_clicks, q1, q2, search):
+    """Persist Q6-1 onto survey_responses + Q6-2 as round-2 willingness, nav to Step 7."""
+    if not n_clicks:
+        return no_update, no_update
+
+    session_id = _parse_session_id(search)
+    if not session_id:
+        return no_update, "Session id missing — please start from '/'."
+    if q1 is None or q2 is None:
+        return no_update, "Please answer both questions."
+
+    from vec_platform.models import (
+        Session as SessionModel,
+        WillingnessMeasurement,
+    )
+    from vec_platform.pages._survey_helpers import get_or_create_survey_row
+
+    db = SessionLocal()
+    try:
+        sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if sess is None:
+            return no_update, "Session not found."
+
+        # Q6-1: upsert disappointment Likert onto the per-session survey row.
+        row = get_or_create_survey_row(db, session_id)
+        row.step6_expectation_vs_reality = int(q1)
+
+        # Q6-2: Phase 3.2b's willingness_measurements table holds three
+        # measurements per session (info_calibration / Step 6 / Step 8).
+        # Defensive idempotency: skip the insert if a round=2 row already
+        # exists for this session, so a double-click doesn't double-insert.
+        existing = (
+            db.query(WillingnessMeasurement)
+            .filter(
+                WillingnessMeasurement.session_id == session_id,
+                WillingnessMeasurement.round == 2,
+            )
+            .first()
+        )
+        if existing is None:
+            db.add(WillingnessMeasurement(
+                session_id=session_id,
+                round=2,
+                scale_type="5point_consider",
+                value=int(q2),
+            ))
+
+        if sess.current_step is None or sess.current_step < 7:
+            sess.current_step = 7
+        db.commit()
+    finally:
+        db.close()
+
+    return f"/dash/step7?session_id={session_id}", ""
