@@ -129,6 +129,11 @@ class RecalculateRequest(BaseModel):
     step: int = 3
     scenario: str = "no_vec"
     device_positions: list[DevicePosition]
+    # v3.4: Step 3 baseline ±10% adjuster, in 5% steps. The frontend has
+    # already applied this scale to the base load it shows the user; we
+    # store the factor as metadata so downstream pages can recover the
+    # un-scaled view if needed.
+    scale_factor: float = 1.0
 
 
 @router.post("/recalculate")
@@ -152,8 +157,14 @@ def recalculate(
     if baseline is None:
         raise HTTPException(status_code=404, detail="Baseline profile not found")
 
-    base_load = json.loads(baseline.rigid_load)
+    raw_base_load = json.loads(baseline.rigid_load)
     pv_generation = json.loads(baseline.pv_generation)
+
+    # Apply Step 3's baseline scale to the rigid load (and ONLY the rigid
+    # load — PV generation and shiftable devices stay at their nominal
+    # values, since the ±10% knob represents passive-load uncertainty).
+    scale = float(data.scale_factor)
+    base_load = [v * scale for v in raw_base_load]
 
     devices: dict[str, list[float]] = {"base_load": base_load}
     for pos in data.device_positions:
@@ -164,8 +175,18 @@ def recalculate(
             arr[i] = pos.load_kw
         devices[pos.name] = arr
 
+    # Stash scale_factor as metadata. Underscore-prefixed keys are skipped
+    # by every reader of the devices dict (timeline.js, step5.js use
+    # ``Array.isArray`` guards; Step 2's chart uses an explicit allowlist).
+    devices["__scale_factor__"] = scale
+
     flexible_load = [
-        sum(devices[name][i] for name in devices if name != "base_load")
+        # Skip non-array metadata (e.g. __scale_factor__) when summing.
+        sum(
+            devices[name][i]
+            for name in devices
+            if name != "base_load" and not name.startswith("__")
+        )
         for i in range(SLOTS_PER_DAY)
     ]
     net_load = [

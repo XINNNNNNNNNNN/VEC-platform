@@ -7,11 +7,15 @@
   // UI state
   const state = {
     sessionId: null,
-    baseLoad: null,          // [96] rigid load from Step 2 baseline
+    rawBaseLoad: null,       // [96] un-scaled rigid load (Step 2 baseline)
+    baseLoad: null,          // [96] scaled rigid load (= rawBaseLoad * scaleFactor)
     pvGeneration: null,      // [96]
     originalBill: null,      // Step 2 no_vec bill, for delta display
     originalPositions: {},   // { name: {start, duration, load_kw} } at Step 2 baseline
     placed: {},              // { name: {start, duration, load_kw} } currently on timeline
+    // v3.4 baseline ±10% adjuster, in 5% steps. Affects only base load,
+    // not PV generation or shiftable devices.
+    scaleFactor: 1.0,
   };
 
   // ---- DOM helpers ----
@@ -365,7 +369,8 @@
       return;
     }
 
-    state.baseLoad = profile.rigid_load;
+    state.rawBaseLoad = profile.rigid_load;
+    state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
     state.pvGeneration = profile.pv_generation;
 
     // Seed positions: for every device present in the Step 2 profile, pick a
@@ -393,6 +398,59 @@
     refreshChartAndBill();
   }
 
+  // ---- v3.4: baseline scale (±10%) ----
+  function applyScale(arr, factor) {
+    return arr.map((v) => v * factor);
+  }
+
+  function updateScaleDisplay() {
+    const pct = Math.round((state.scaleFactor - 1.0) * 100);
+    const sign = pct > 0 ? "+" : "";
+    $("scale-display").textContent = `${sign}${pct}%`;
+    // Disable buttons at the bounds.
+    $("scale-decrement").disabled = state.scaleFactor <= 0.9001;  // float fudge
+    $("scale-increment").disabled = state.scaleFactor >= 1.0999;
+  }
+
+  function setScaleFactor(newFactor) {
+    state.scaleFactor = +newFactor.toFixed(2);
+    state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
+    updateScaleDisplay();
+    refreshChartAndBill();
+  }
+
+  function setupScaleControls() {
+    $("scale-decrement").addEventListener("click", () => {
+      setScaleFactor(Math.max(0.9, state.scaleFactor - 0.05));
+    });
+    $("scale-increment").addEventListener("click", () => {
+      setScaleFactor(Math.min(1.1, state.scaleFactor + 0.05));
+    });
+    updateScaleDisplay();
+  }
+
+  // ---- v3.4: end-of-Step-3 questions (second prior expectation + confidence) ----
+  function setupQuestionControls() {
+    // Live "X%" label below the slider.
+    $("step3-expectation-pct").addEventListener("input", (e) => {
+      $("step3-expectation-display").textContent = e.target.value;
+    });
+    // Likert change → enable Confirm.
+    document.querySelectorAll('input[name="step3-confidence"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        $("btn-confirm").disabled = false;
+      });
+    });
+  }
+
+  function getQuestionAnswers() {
+    const checked = document.querySelector('input[name="step3-confidence"]:checked');
+    return {
+      pct: Number($("step3-expectation-pct").value),
+      confidence: checked ? Number(checked.value) : null,
+    };
+  }
+
   // ---- Buttons ----
   function setupButtons() {
     $("btn-reset").addEventListener("click", () => {
@@ -407,11 +465,26 @@
 
     $("btn-confirm").addEventListener("click", async () => {
       const btn = $("btn-confirm");
+      const errEl = $("step3-error");
+      errEl.textContent = "";
+
+      // Confidence must be picked (button is normally disabled until it is,
+      // but defend against synthetic clicks / race conditions).
+      const { pct, confidence } = getQuestionAnswers();
+      if (confidence === null) {
+        errEl.textContent = "Please answer the confidence question.";
+        return;
+      }
+
       btn.disabled = true;
       btn.textContent = "Saving…";
       try {
-        // Persist each device shift vs. its Step 2 baseline position.
+        // Persist each device shift vs. its Step 2 baseline position. The
+        // FIRST shift call also carries the second prior-expectation guess
+        // and the confidence Likert — backend writes a PriorExpectation
+        // row (round=2) when both are present and step == 3.
         const shifts = [];
+        let firstShiftSent = false;
         for (const name of Object.keys(DEVICE_CATALOG)) {
           const orig = state.originalPositions[name];
           const placed = state.placed[name];
@@ -420,25 +493,33 @@
           const origEnd = orig ? orig.start + orig.duration : 0;
           const finalStart = placed ? placed.start : 0;
           const finalEnd = placed ? placed.start + placed.duration : 0;
-          shifts.push(
-            VECApi.saveDeviceShift({
-              session_id: state.sessionId,
-              step: STEP,
-              device_name: name,
-              original_start: origStart,
-              original_end: origEnd,
-              final_start: finalStart,
-              final_end: finalEnd,
-            })
-          );
+          const payload = {
+            session_id: state.sessionId,
+            step: STEP,
+            device_name: name,
+            original_start: origStart,
+            original_end: origEnd,
+            final_start: finalStart,
+            final_end: finalEnd,
+          };
+          if (!firstShiftSent) {
+            payload.prior_expectation_pct = pct;
+            payload.confidence = confidence;
+            firstShiftSent = true;
+          }
+          shifts.push(VECApi.saveDeviceShift(payload));
         }
         await Promise.all(shifts);
 
-        // Persist the step=3 profile + bills server-side.
+        // Persist the step=3 profile + bills server-side. scale_factor
+        // is sent so the backend can stash it in daily_profiles.devices
+        // (under the __scale_factor__ key) and apply the same scaling
+        // to the rigid base load.
         await VECApi.recalculate({
           session_id: state.sessionId,
           step: STEP,
           scenario: "no_vec",
+          scale_factor: state.scaleFactor,
           device_positions: Object.entries(state.placed).map(([name, pos]) => ({
             name,
             start_slot: pos.start,
@@ -452,7 +533,7 @@
         console.error(err);
         showError("Something went wrong while saving your choices. Please try again.");
         btn.disabled = false;
-        btn.textContent = "Confirm → Step 4";
+        btn.textContent = "Next";
       }
     });
   }
@@ -471,6 +552,8 @@
   // ---- Bootstrap ----
   document.addEventListener("DOMContentLoaded", () => {
     renderProgressBar();
+    setupScaleControls();
+    setupQuestionControls();
     setupButtons();
     loadInitial();
   });

@@ -8,7 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from vec_platform.main import get_db
-from vec_platform.models import Session as SessionModel, DeviceShift, DragLog
+from vec_platform.models import (
+    Session as SessionModel,
+    DeviceShift,
+    DragLog,
+    PriorExpectation,
+)
 
 router = APIRouter()
 
@@ -23,6 +28,14 @@ class DeviceShiftCreate(BaseModel):
     final_end: int
     willing: Optional[bool] = None
     unwilling_reason: Optional[str] = None
+
+    # v3.4 piggyback fields. Step 3's confirm flow now also collects a
+    # second prior-expectation guess + confidence Likert. The frontend
+    # sends these on a single (typically the first) device-shift call to
+    # avoid an extra round-trip; backend writes one PriorExpectation row
+    # when step == 3 and both fields are present. Other steps ignore them.
+    prior_expectation_pct: Optional[float] = None
+    confidence: Optional[int] = None
 
 
 class DragLogCreate(BaseModel):
@@ -60,9 +73,35 @@ def create_device_shift(
         unwilling_reason=data.unwilling_reason,
     )
     db.add(shift)
+
+    # v3.4: piggyback the second prior-expectation guess from Step 3's
+    # confirm flow. Only writes when step == 3 AND both fields are sent
+    # AND no round=2 row exists yet (idempotent — defends against the
+    # caller accidentally sending the fields on multiple shift calls).
+    if (
+        data.step == 3
+        and data.prior_expectation_pct is not None
+        and data.confidence is not None
+    ):
+        existing = (
+            db.query(PriorExpectation)
+            .filter(
+                PriorExpectation.session_id == data.session_id,
+                PriorExpectation.measurement_round == 2,
+            )
+            .first()
+        )
+        if existing is None:
+            db.add(PriorExpectation(
+                session_id=data.session_id,
+                measurement_round=2,
+                pct=float(data.prior_expectation_pct),
+                confidence=int(data.confidence),
+            ))
+
     db.commit()
     db.refresh(shift)
-    
+
     return {
         "status": "ok",
         "shift_id": shift.id,

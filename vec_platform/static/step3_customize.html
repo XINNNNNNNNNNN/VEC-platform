@@ -31,6 +31,23 @@
 
     <div id="error-banner" class="alert alert-danger d-none"></div>
 
+    <!-- v3.4: ±10% baseline scale knob (5% steps). Scales only the rigid
+         base load, not PV or shiftable devices. -->
+    <div class="card mb-3 baseline-adjust-card">
+      <div class="card-header"><strong>Adjust your baseline (optional)</strong></div>
+      <div class="card-body">
+        <p class="hint text-muted small mb-2">
+          Use these buttons to scale your overall base electricity use up
+          or down by ±10%, in 5% steps.
+        </p>
+        <div class="scale-controls">
+          <button id="scale-decrement" class="scale-btn" type="button">−</button>
+          <span id="scale-display" class="scale-value">0%</span>
+          <button id="scale-increment" class="scale-btn" type="button">+</button>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-3">
       <div class="card-header"><strong>Your daily timeline</strong></div>
       <div class="card-body">
@@ -72,14 +89,52 @@
       </div>
     </div>
 
+    <!-- v3.4: second prior-expectation guess + confidence Likert moved
+         here from Step 2. The participant has now seen their profile,
+         dragged devices, and watched the bill update live — strongest
+         "informed expectation" signal point in the journey. -->
+    <hr/>
+    <div class="card mb-3 expectation-card">
+      <div class="card-header"><strong>Your expectation, now that you've seen the numbers</strong></div>
+      <div class="card-body">
+        <h5 class="mb-3">
+          Now that you've configured your home and adjusted your devices,
+          what % of your monthly bill do you expect to save by joining a VEC?
+        </h5>
+        <input
+          type="range"
+          id="step3-expectation-pct"
+          min="0" max="50" step="1" value="0"
+          class="form-range"
+        />
+        <div class="slider-display text-center fs-4 fw-bold mt-2">
+          <span id="step3-expectation-display">0</span>%
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3 confidence-card">
+      <div class="card-header"><strong>How confident are you about this estimate?</strong></div>
+      <div class="card-body">
+        <div class="likert-group">
+          <label><input type="radio" name="step3-confidence" value="1"/> 1 — Not at all confident</label>
+          <label><input type="radio" name="step3-confidence" value="2"/> 2 — Slightly confident</label>
+          <label><input type="radio" name="step3-confidence" value="3"/> 3 — Moderately confident</label>
+          <label><input type="radio" name="step3-confidence" value="4"/> 4 — Quite confident</label>
+          <label><input type="radio" name="step3-confidence" value="5"/> 5 — Very confident</label>
+        </div>
+        <div id="step3-error" class="error-text"></div>
+      </div>
+    </div>
+
     <div class="d-flex justify-content-between align-items-center mb-4">
       <a id="btn-back" class="btn btn-secondary">← Back to Step 2</a>
       <div>
         <button id="btn-reset" class="btn btn-outline-warning me-2" type="button">
           Reset to defaults
         </button>
-        <button id="btn-confirm" class="btn btn-primary" type="button">
-          Confirm → Step 4
+        <button id="btn-confirm" class="btn btn-primary" type="button" disabled>
+          Next
         </button>
       </div>
     </div>
