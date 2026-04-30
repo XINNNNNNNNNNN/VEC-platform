@@ -223,6 +223,9 @@ class PriorExpectation(Base):
     )
     measurement_round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 or 2
     pct: Mapped[float] = mapped_column(Float, nullable=False)  # 0.0 – 50.0
+    # 5-point confidence Likert, only collected at round=2 (Step 2 page).
+    # NULL for round=1 rows from Step 0.
+    confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
     )
