@@ -317,6 +317,24 @@
   function setWillingness(name, willing) {
     state.willingness[name].willing = willing;
     if (willing) state.willingness[name].reasons.clear();
+
+    // v3.X-fix-1: "Not willing to adjust" should also revert the device's
+    // position to its Step 3 baseline (which loadInitial seeded into
+    // state.originalPositions). Otherwise the user has said "I wouldn't
+    // shift this for VEC prices" while the chart/bill keep showing the
+    // shifted position — data-semantic mismatch.
+    //
+    // We deliberately do NOT auto-revert when willing flips back to true:
+    // re-checking "willing" is itself a fresh decision; restoring the
+    // pre-rollback shifted position would override that choice. The user
+    // can drag again if they want to re-commit to a shift.
+    if (!willing && state.originalPositions[name]) {
+      state.placed[name] = { ...state.originalPositions[name] };
+      renderTimeline();
+      updateDeviceCard(name);
+      refreshChart();
+    }
+
     const card = $("device-cards").querySelector(`.device-card[data-device="${name}"]`);
     if (!card) return;
     const reasons = card.querySelector("[data-role=reasons]");
