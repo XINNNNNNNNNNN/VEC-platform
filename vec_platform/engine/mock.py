@@ -208,15 +208,22 @@ class MockEngine(CalculationEngine):
           ev_charger      — only if user_input.has_ev
         Tumble dryer and oven_baking are NOT in the baseline; they only
         appear if the user adds them on the Step 3 page.
+
+        v3.X-fix-5a: instance keys are now suffixed with ``#1`` so the
+        rest of the pipeline can disambiguate a second/third instance of
+        the same device type (added later via Step 3 in fix-5b/c). The
+        suffix is the canonical key used in ``daily_profiles.devices``
+        and ``device_shifts.device_name``. ``base_load`` keeps its bare
+        name — it is the rigid background, not a device instance.
         """
         building_type = self._derive_building_type(user_input)
         devices: dict[str, list[float]] = {
             "base_load": self._get_base_load(building_type),
             # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
-            "cooking": self._device_block(72, 76, 2.0),       # 18:00-19:00, 2 kW
+            "cooking#1": self._device_block(72, 76, 2.0),       # 18:00-19:00, 2 kW
             # Shiftable wet appliances.
-            "dishwasher": self._device_block(78, 84, 1.2),    # 19:30-21:00, 1.2 kW
-            "washing_machine": self._device_block(76, 84, 2.0),  # 19:00-21:00, 2.0 kW
+            "dishwasher#1": self._device_block(78, 84, 1.2),    # 19:30-21:00, 1.2 kW
+            "washing_machine#1": self._device_block(76, 84, 2.0),  # 19:00-21:00, 2.0 kW
         }
 
         # v3 dropped the heating question along with the water_heater device.
@@ -224,7 +231,7 @@ class MockEngine(CalculationEngine):
         # EV charging late afternoon through midnight (16:00-24:00, 8h).
         # Kept non-wrapping so the Step 3 timeline can show it as a single block.
         if user_input.has_ev:
-            devices["ev_charger"] = self._device_block(64, 96, 3.7)
+            devices["ev_charger#1"] = self._device_block(64, 96, 3.7)
 
         return devices
 

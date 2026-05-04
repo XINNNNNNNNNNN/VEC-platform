@@ -42,20 +42,41 @@ _DEVICE_LABELS = {
 }
 
 
+def _base_device_name(name: str) -> str:
+    """Strip a ``#N`` instance suffix to look the device up in the
+    catalog dicts above. ``cooking#1`` → ``cooking``; bare names pass
+    through. Introduced in v3.X-fix-5a so this chart keeps rendering
+    after the engine started suffixing instance keys.
+    """
+    return name.split("#", 1)[0]
+
+
 def _load_curve_figure(devices: dict, pv_generation: list, net_load: list) -> go.Figure:
     """Stacked area chart of per-device loads, PV as negative area, net-load line."""
     hours = [_slot_to_hour(i) for i in range(SLOTS_PER_DAY)]
     fig = go.Figure()
 
-    order = [d for d in _DEVICE_LABELS if d in devices]
+    # Iterate over what the engine actually produced (skipping rigid
+    # base_load and underscore-prefixed metadata like __scale_factor__),
+    # and only render traces whose stripped base name is in the catalog.
+    # Pre-fix-5a this iterated _DEVICE_LABELS keys directly, but #1
+    # suffixes break that because devices dict keys no longer match
+    # _DEVICE_LABELS keys verbatim.
+    order = [
+        d for d in devices
+        if d != "base_load"
+        and not d.startswith("__")
+        and _base_device_name(d) in _DEVICE_LABELS
+    ]
     for name in order:
+        base = _base_device_name(name)
         fig.add_trace(go.Scatter(
             x=hours,
             y=devices[name],
-            name=_DEVICE_LABELS[name],
+            name=_DEVICE_LABELS[base],
             mode="lines",
             stackgroup="load",
-            line=dict(width=0.5, color=_DEVICE_COLORS.get(name)),
+            line=dict(width=0.5, color=_DEVICE_COLORS.get(base)),
             hovertemplate="%{y:.2f} kW<extra>%{fullData.name}</extra>",
         ))
 
