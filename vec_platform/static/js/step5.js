@@ -32,6 +32,11 @@
     step2NetLoad: null,
     step3NetLoad: null,
     originalPositions: {},     // Step 3 positions, the starting point
+    // v3.X-fix-2: most recent position the user actively dragged a device to.
+    // Empty if user never moved that device. Used by setWillingness to
+    // restore the user's adjusted position when willing flips back to true,
+    // and by Confirm to write the right position to device_shifts.
+    shiftedPositions: {},
     placed: {},                // Live positions in Step 5
     willingness: {},           // { name: { willing: bool, reasons: Set<string> } }
     bills: {
@@ -170,6 +175,12 @@
       const newStart = state.placed[name].start;
       const newEnd = newStart + state.placed[name].duration;
       if (newStart !== preDragStart) {
+        // v3.X-fix-2: snapshot the user's adjusted position so we can
+        // restore it if they toggle willing=no and then willing=yes again.
+        // Only record on real drags (not no-op clicks) and not on programmatic
+        // moves like setWillingness rollback — those don't go through endDrag.
+        state.shiftedPositions[name] = { ...state.placed[name] };
+
         VECApi.logDrag({
           session_id: state.sessionId,
           step: STEP,
@@ -318,17 +329,26 @@
     state.willingness[name].willing = willing;
     if (willing) state.willingness[name].reasons.clear();
 
-    // v3.X-fix-1: "Not willing to adjust" should also revert the device's
-    // position to its Step 3 baseline (which loadInitial seeded into
-    // state.originalPositions). Otherwise the user has said "I wouldn't
-    // shift this for VEC prices" while the chart/bill keep showing the
-    // shifted position — data-semantic mismatch.
-    //
-    // We deliberately do NOT auto-revert when willing flips back to true:
-    // re-checking "willing" is itself a fresh decision; restoring the
-    // pre-rollback shifted position would override that choice. The user
-    // can drag again if they want to re-commit to a shift.
-    if (!willing && state.originalPositions[name]) {
+    // v3.X-fix-1 + v3.X-fix-2: position memory across willing toggle.
+    //   willing=no  → revert to step 3 baseline (originalPositions). Saying
+    //                 "I wouldn't shift this for VEC prices" while the chart
+    //                 keeps showing a shifted position is a data-semantic
+    //                 mismatch.
+    //   willing=yes → restore the user's most recent dragged position
+    //                 (shiftedPositions). Falls back to baseline when the
+    //                 user has never dragged this device, so the call is a
+    //                 no-op in that case.
+    // shiftedPositions is intentionally NOT updated here — these are
+    // programmatic moves driven by the willing toggle, not new user intent.
+    if (willing) {
+      const target = state.shiftedPositions[name] || state.originalPositions[name];
+      if (target) {
+        state.placed[name] = { ...target };
+        renderTimeline();
+        updateDeviceCard(name);
+        refreshChart();
+      }
+    } else if (state.originalPositions[name]) {
       state.placed[name] = { ...state.originalPositions[name] };
       renderTimeline();
       updateDeviceCard(name);
@@ -595,6 +615,25 @@
       btn.disabled = true;
       btn.textContent = "Saving…";
       try {
+        // v3.X-fix-2: writeback semantics.
+        //   willing=yes → write the user's adjusted position
+        //                 (shiftedPositions, falling back to baseline if the
+        //                 user never dragged it).
+        //   willing=no  → ALWAYS write step 3 baseline regardless of what
+        //                 state.placed currently shows. This keeps the
+        //                 research data clean: an "I won't shift this"
+        //                 answer should land in device_shifts as the
+        //                 user's natural step-3 schedule, not whatever
+        //                 the chart happened to show before they decided.
+        // Same rule applied to the recalculate POST below so the
+        // persisted Step 5 profile / bills stay consistent with
+        // device_shifts.
+        function writePosFor(name) {
+          const will = state.willingness[name];
+          if (will && !will.willing) return state.originalPositions[name];
+          return state.shiftedPositions[name] || state.originalPositions[name];
+        }
+
         // Persist each device's shift + willingness. The FIRST shift
         // call also carries the v3.6 counterfactual + effort answers
         // (piggyback pattern, same as Step 3's prior_expectation_pct).
@@ -602,7 +641,7 @@
         let firstShiftSent = false;
         for (const name of Object.keys(state.placed)) {
           const orig = state.originalPositions[name];
-          const pos = state.placed[name];
+          const pos = writePosFor(name) || state.placed[name];
           const will = state.willingness[name];
           const reasons = will.willing ? null : Array.from(will.reasons).join(",") || null;
           const payload = {
@@ -630,12 +669,15 @@
           session_id: state.sessionId,
           step: STEP,
           scenario: "vec_adjusted",
-          device_positions: Object.entries(state.placed).map(([name, pos]) => ({
-            name,
-            start_slot: pos.start,
-            duration_slots: pos.duration,
-            load_kw: pos.load_kw,
-          })),
+          device_positions: Object.entries(state.placed).map(([name]) => {
+            const pos = writePosFor(name) || state.placed[name];
+            return {
+              name,
+              start_slot: pos.start,
+              duration_slots: pos.duration,
+              load_kw: pos.load_kw,
+            };
+          }),
         });
 
         window.location.href = `/dash/step6?session_id=${state.sessionId}`;
