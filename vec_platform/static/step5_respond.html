@@ -32,6 +32,37 @@
 
     <div id="error-banner" class="alert alert-danger d-none"></div>
 
+    <!-- v3.X-fix-4: chart + bill moved above timeline so users see live
+         feedback while dragging devices and answering willing/no without
+         scrolling. Side-by-side on lg+ (chart 8 / bill 4), stacked on
+         smaller screens. -->
+    <div class="row mb-3 step5-top-row">
+      <div class="col-12 col-lg-8 mb-3 mb-lg-0">
+        <div class="card h-100">
+          <div class="card-header">
+            <strong>Net load — baseline vs. customized vs. adjusted</strong>
+          </div>
+          <div class="card-body">
+            <div id="compare-chart" style="height: 360px;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <div class="card h-100">
+          <div class="card-header">
+            <strong>Monthly bill preview</strong>
+          </div>
+          <div class="card-body">
+            <div id="bill-compare" class="bill-compare"></div>
+            <div class="small text-muted mt-3">
+              The green card updates live as you drag. These figures are
+              approximations — Step 6 will show the full breakdown.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-3">
       <div class="card-header"><strong>Your timeline — drag to shift</strong></div>
       <div class="card-body">
@@ -47,33 +78,6 @@
       <div class="card-header"><strong>Each device — would you actually do this?</strong></div>
       <div class="card-body">
         <div id="device-cards"></div>
-      </div>
-    </div>
-
-    <div class="row mb-3">
-      <div class="col-md-7 mb-3 mb-md-0">
-        <div class="card h-100">
-          <div class="card-header">
-            <strong>Net load — baseline vs. customized vs. adjusted</strong>
-          </div>
-          <div class="card-body">
-            <div id="compare-chart" style="height: 360px;"></div>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-5">
-        <div class="card h-100">
-          <div class="card-header">
-            <strong>Monthly bill preview</strong>
-          </div>
-          <div class="card-body">
-            <div id="bill-compare" class="bill-compare"></div>
-            <div class="small text-muted mt-3">
-              The green card updates live as you drag. These figures are
-              approximations — Step 6 will show the full breakdown.
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 

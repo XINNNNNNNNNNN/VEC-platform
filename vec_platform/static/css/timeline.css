@@ -376,3 +376,60 @@
   display: flex;
   align-items: center;
 }
+
+/* --- Phase 3.X-fix-4: Step 5 layout reorder + compact device cards ---
+ *
+ * Goals:
+ *   1. Equal-height side-by-side chart + bill row on lg+ screens so
+ *      neither card visually dominates.
+ *   2. Tighten the device-card / willingness-row / reasons-row vertical
+ *      footprint so all four device decisions fit above the fold once
+ *      chart+bill have moved to the top, letting users see live chart
+ *      feedback while answering willing/no.
+ *
+ * These rules append to (not replace) the existing .device-card /
+ * .willingness-row / .reasons-row blocks above; later rules win on
+ * equal specificity.
+ */
+
+@media (min-width: 1200px) {
+  .step5-top-row {
+    align-items: stretch;
+  }
+}
+
+.device-card {
+  margin-bottom: 0.4rem;        /* was 12px */
+}
+
+.device-card-header {
+  padding: 0.4rem 0.7rem;       /* was 10px 14px */
+}
+
+.device-card-body {
+  padding: 0.5rem 0.7rem;       /* was 10px 14px */
+}
+
+.willingness-row {
+  gap: 1.5rem;                  /* was 12px */
+  margin-top: 4px;              /* was 8px */
+}
+
+.willingness-row label {
+  margin-bottom: 0;
+}
+
+/* Q1=A: keep reasons-row horizontal flex-wrap (preserves the goal of
+   minimising vertical footprint), just tighten the gaps + slight
+   font-size shrink. Direction stays horizontal — vertical would make
+   the device card taller, defeating fix-4's "see chart while answering"
+   goal. */
+.reasons-row {
+  gap: 4px 10px;                /* was 6px 12px */
+  margin-top: 4px;              /* was 6px */
+}
+
+.reasons-row label {
+  margin-bottom: 0;
+  font-size: 0.92rem;
+}
