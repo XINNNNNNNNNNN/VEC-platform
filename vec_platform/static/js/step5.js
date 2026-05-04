@@ -181,6 +181,27 @@
         // moves like setWillingness rollback — those don't go through endDrag.
         state.shiftedPositions[name] = { ...state.placed[name] };
 
+        // v3.X-fix-3: dragging invalidates any prior willing yes/no for
+        // this device. The user has just moved the device to a new
+        // position, so any earlier statement about willingness is stale —
+        // force them to re-decide. Clear state + DOM (radios + reasons
+        // checkboxes + reasons block visibility) and re-evaluate the
+        // Submit gate (which now requires every device answered).
+        // Side-stepping setWillingness on purpose: it has its own position
+        // restore path that we don't want to trigger here.
+        state.willingness[name].willing = null;
+        state.willingness[name].reasons.clear();
+        const card = $("device-cards").querySelector(`.device-card[data-device="${name}"]`);
+        if (card) {
+          card.querySelectorAll(`input[name="willing-${name}"]`).forEach((r) => { r.checked = false; });
+          const reasons = card.querySelector("[data-role=reasons]");
+          if (reasons) {
+            reasons.classList.add("hidden");
+            reasons.querySelectorAll("input[type=checkbox]").forEach((b) => { b.checked = false; });
+          }
+        }
+        updateConfirmEnabled();
+
         VECApi.logDrag({
           session_id: state.sessionId,
           step: STEP,
@@ -356,15 +377,21 @@
     }
 
     const card = $("device-cards").querySelector(`.device-card[data-device="${name}"]`);
-    if (!card) return;
-    const reasons = card.querySelector("[data-role=reasons]");
-    if (willing) {
-      reasons.classList.add("hidden");
-      // Uncheck all boxes visually.
-      reasons.querySelectorAll("input[type=checkbox]").forEach((b) => { b.checked = false; });
-    } else {
-      reasons.classList.remove("hidden");
+    if (card) {
+      const reasons = card.querySelector("[data-role=reasons]");
+      if (willing) {
+        reasons.classList.add("hidden");
+        // Uncheck all boxes visually.
+        reasons.querySelectorAll("input[type=checkbox]").forEach((b) => { b.checked = false; });
+      } else {
+        reasons.classList.remove("hidden");
+      }
     }
+
+    // v3.X-fix-3: re-evaluate Submit gate. Now that willing is no longer
+    // defaulted to true, every yes/no click flips the all-devices-answered
+    // condition and may enable/disable Submit.
+    updateConfirmEnabled();
   }
 
   function toggleReason(name, reason, on) {
@@ -531,7 +558,10 @@
       const pos = { start, duration, load_kw };
       state.originalPositions[name] = { ...pos };
       state.placed[name] = { ...pos };
-      state.willingness[name] = { willing: true, reasons: new Set() };
+      // v3.X-fix-3: willing defaults to null (= "not yet answered"),
+      // not true. Submit now requires every device to be explicitly
+      // answered, so an opt-in default would silently bypass the gate.
+      state.willingness[name] = { willing: null, reasons: new Set() };
     }
 
     // Pull the Step 3 bills so the comparison strip matches what Step 4 showed.
@@ -568,12 +598,24 @@
   }
 
   function updateConfirmEnabled() {
-    // Confirm enables once both counterfactual questions are answered.
-    // Existing willingness UI doesn't gate Confirm (default willing=true
-    // is set per-device on render, so it's always answered already).
+    // Confirm enables once:
+    //  (a) both counterfactual questions are answered, AND
+    //  (b) [v3.X-fix-3] every rendered device has an explicit willing
+    //      yes/no. willing=null means "not yet answered" — either
+    //      initial page load (default is now null, not true), or the
+    //      user just dragged a device which clears its prior answer.
     const { q1, q2 } = getCounterfactualAnswers();
+    // Length guard: setupCounterfactualGate fires updateConfirmEnabled
+    // on page load before loadInitial has populated state.willingness.
+    // Without this, Object.values({}).every(...) is vacuously true and
+    // a fast user answering counterfactual mid-load could briefly see
+    // Submit enabled.
+    const willEntries = Object.values(state.willingness);
+    const allDevicesAnswered =
+      willEntries.length > 0 &&
+      willEntries.every((w) => w.willing === true || w.willing === false);
     const btn = $("btn-confirm");
-    if (btn) btn.disabled = !(q1 && q2);
+    if (btn) btn.disabled = !(q1 && q2 && allDevicesAnswered);
   }
 
   function setupCounterfactualGate() {
@@ -592,11 +634,17 @@
         state.placed[name] = { ...pos };
       }
       for (const name in state.willingness) {
-        state.willingness[name] = { willing: true, reasons: new Set() };
+        // v3.X-fix-3: reset to fresh-page-load semantics — willing must
+        // be re-answered after a reset, same as on first load.
+        state.willingness[name] = { willing: null, reasons: new Set() };
       }
       renderTimeline();
       renderDeviceCards();
       refreshChart();
+      // v3.X-fix-3: re-disable Submit until the user re-answers willing
+      // for every device (renderDeviceCards rebuilt unchecked radios but
+      // doesn't touch the button's disabled attribute).
+      updateConfirmEnabled();
     });
 
     $("btn-confirm").addEventListener("click", async () => {
