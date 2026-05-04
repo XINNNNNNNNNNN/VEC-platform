@@ -90,14 +90,17 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
-    for (const name of DEVICE_ROW_ORDER) {
+    // v3.X-fix-5a-patch: state.placed keys carry a `#1` instance suffix;
+    // iterate base names and address state via stateKeyForBase().
+    for (const baseName of DEVICE_ROW_ORDER) {
+      const name = stateKeyForBase(baseName);
       if (!(name in state.placed)) continue;
       const row = document.createElement("div");
       row.className = "timeline-row";
 
       const rowLabel = document.createElement("div");
       rowLabel.className = "timeline-row-label";
-      rowLabel.textContent = DEVICE_CATALOG[name].label;
+      rowLabel.textContent = DEVICE_CATALOG[baseName].label;
       row.appendChild(rowLabel);
 
       row.appendChild(makeBlock(name));
@@ -106,7 +109,7 @@
   }
 
   function makeBlock(name) {
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
     const block = document.createElement("div");
     block.className = "device-block";
@@ -125,7 +128,7 @@
   }
 
   function updateBlockLabel(block, name) {
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
     block.title = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
     const label = block.querySelector(".device-block-label");
@@ -239,14 +242,16 @@
   function renderDeviceCards() {
     const root = $("device-cards");
     root.innerHTML = "";
-    for (const name of DEVICE_ROW_ORDER) {
+    // v3.X-fix-5a-patch: address suffixed state keys via stateKeyForBase().
+    for (const baseName of DEVICE_ROW_ORDER) {
+      const name = stateKeyForBase(baseName);
       if (!(name in state.placed)) continue;
       root.appendChild(makeDeviceCard(name));
     }
   }
 
   function makeDeviceCard(name) {
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const card = document.createElement("div");
     card.className = "device-card";
     card.dataset.device = name;
@@ -549,7 +554,9 @@
     for (const [name, arr] of Object.entries(step3.devices)) {
       if (name === "base_load") continue;
       if (!Array.isArray(arr)) continue;
-      const catalogMeta = DEVICE_CATALOG[name];
+      // v3.X-fix-5a-patch: name carries the engine's `#1` suffix; the
+      // catalog is keyed by base type, so strip before looking up.
+      const catalogMeta = DEVICE_CATALOG[stripInstanceSuffix(name)];
       if (!catalogMeta) continue;
       const bounds = VECCompute.extractBounds(arr);
       const start = bounds ? bounds.start : (catalogMeta.default_start ?? 0);

@@ -58,17 +58,20 @@
 
     // One row per placed device, in a stable order so the visual doesn't jump.
     // Order matches DEVICE_CATALOG declaration order (Phase 3.7-pre).
+    // v3.X-fix-5a-patch: state keys now carry a `#1` instance suffix; iterate
+    // base names but address state via stateKeyForBase().
     const order = ["cooking", "dishwasher", "washing_machine",
                    "dryer", "oven_baking", "ev_charger"];
 
-    for (const name of order) {
+    for (const baseName of order) {
+      const name = stateKeyForBase(baseName);
       if (!(name in state.placed)) continue;
       const row = document.createElement("div");
       row.className = "timeline-row";
 
       const rowLabel = document.createElement("div");
       rowLabel.className = "timeline-row-label";
-      rowLabel.textContent = DEVICE_CATALOG[name].label;
+      rowLabel.textContent = DEVICE_CATALOG[baseName].label;
       row.appendChild(rowLabel);
 
       const block = makeBlock(name);
@@ -79,7 +82,7 @@
   }
 
   function makeBlock(name) {
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
     const block = document.createElement("div");
     block.className = "device-block";
@@ -109,7 +112,7 @@
   }
 
   function updateBlockLabel(block, name) {
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
     block.title = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
     const label = block.querySelector(".device-block-label");
@@ -176,9 +179,14 @@
   }
 
   // ---- Add / remove ----
-  function addDevice(name) {
+  function addDevice(baseName) {
+    // v3.X-fix-5a-patch: dropdown options carry the bare type name; state
+    // keying uses the suffixed instance key so device_shifts.device_name
+    // sent to the backend matches what the engine produced for baseline
+    // entries (cooking#1, etc.).
+    const name = stateKeyForBase(baseName);
     if (name in state.placed) return;
-    const meta = DEVICE_CATALOG[name];
+    const meta = DEVICE_CATALOG[baseName];
     const defaults = state.originalPositions[name] || {
       start: meta.default_start,
       duration: meta.default_duration,
@@ -231,16 +239,21 @@
     const ul = $("device-instance-list");
     if (!ul) return;
     ul.innerHTML = "";
-    const present = DEVICE_LIST_ORDER.filter((n) => n in state.placed);
-    if (present.length === 0) {
+    // v3.X-fix-5a-patch: DEVICE_LIST_ORDER is base names; state.placed is
+    // keyed by stateKeyForBase(...). Build a list of (baseName, stateKey)
+    // for every base type whose suffixed instance is currently placed.
+    const presentPairs = DEVICE_LIST_ORDER
+      .map((b) => [b, stateKeyForBase(b)])
+      .filter(([, k]) => k in state.placed);
+    if (presentPairs.length === 0) {
       const empty = document.createElement("li");
       empty.className = "device-instance-empty";
       empty.textContent = "No devices configured. Use [+ Add] below.";
       ul.appendChild(empty);
       return;
     }
-    for (const name of present) {
-      const meta = DEVICE_CATALOG[name];
+    for (const [baseName, name] of presentPairs) {
+      const meta = DEVICE_CATALOG[baseName];
       const pos = state.placed[name];
       const li = document.createElement("li");
       li.className = "device-instance";
@@ -280,12 +293,14 @@
     select.appendChild(placeholder);
 
     let count = 0;
-    for (const name of DEVICE_LIST_ORDER) {
-      const meta = DEVICE_CATALOG[name];
+    for (const baseName of DEVICE_LIST_ORDER) {
+      const meta = DEVICE_CATALOG[baseName];
       if (!meta || !meta.draggable) continue;
-      if (name in state.placed) continue;  // single-instance: hide if present
+      // single-instance: hide if the (only) instance is already placed.
+      if (stateKeyForBase(baseName) in state.placed) continue;
       const opt = document.createElement("option");
-      opt.value = name;
+      opt.value = baseName;        // dropdown carries the bare type;
+                                   // addDevice() suffixes it on insert.
       opt.textContent = meta.label;
       select.appendChild(opt);
       count++;
@@ -327,9 +342,12 @@
     // currently has in state.placed (which is mirrored in deviceArrays).
     // Picks up user-added types (dryer, oven_baking) automatically and
     // drops removed ones.
-    for (const name of DEVICE_LIST_ORDER) {
+    // v3.X-fix-5a-patch: deviceArrays keys carry `#1` suffix; iterate
+    // base names and address arrays via stateKeyForBase().
+    for (const baseName of DEVICE_LIST_ORDER) {
+      const name = stateKeyForBase(baseName);
       if (!(name in deviceArrays)) continue;
-      const meta = DEVICE_CATALOG[name];
+      const meta = DEVICE_CATALOG[baseName];
       if (!meta) continue;  // defensive: unknown device type
       traces.push({
         x, y: deviceArrays[name],
@@ -437,7 +455,9 @@
     for (const [name, arr] of Object.entries(profile.devices)) {
       if (name === "base_load") continue;
       if (!Array.isArray(arr)) continue;
-      const catalogMeta = DEVICE_CATALOG[name];
+      // v3.X-fix-5a-patch: name carries the engine's `#1` suffix; the
+      // catalog is keyed by base type, so strip before looking up.
+      const catalogMeta = DEVICE_CATALOG[stripInstanceSuffix(name)];
       if (!catalogMeta) continue;
       const bounds = VECCompute.extractBounds(arr);
       const start = catalogMeta.default_start ?? (bounds ? bounds.start : 0);

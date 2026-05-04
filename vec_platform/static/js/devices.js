@@ -96,6 +96,26 @@ const DEVICE_CATALOG = {
   },
 };
 
+// v3.X-fix-5a-patch: strip the `#N` instance suffix off a state key so
+// it matches a DEVICE_CATALOG entry. Bare names pass through unchanged
+// (defensive — shouldn't happen post-fix-5a, but cheap to handle).
+//   stripInstanceSuffix('cooking#1') -> 'cooking'
+//   stripInstanceSuffix('cooking#2') -> 'cooking'
+//   stripInstanceSuffix('base_load') -> 'base_load'
+// Mirrors pages/step2.py::_base_device_name on the backend so both ends
+// strip suffixes the same way.
+function stripInstanceSuffix(name) {
+  return name.split("#", 1)[0];
+}
+
+// fix-5a-patch single-instance: dropdown produces bare names, but state
+// keys carry a `#1` suffix to stay consistent with the engine's device
+// dict and device_shifts.device_name. Centralised here so fix-5b can
+// swap this for a real multi-instance counter.
+function stateKeyForBase(baseName) {
+  return baseName + "#1";
+}
+
 function slotToTimeLabel(slot) {
   const h = Math.floor((slot * 15) / 60);
   const m = (slot * 15) % 60;
