@@ -90,21 +90,24 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
-    // v3.X-fix-5a-patch: state.placed keys carry a `#1` instance suffix;
-    // iterate base names and address state via stateKeyForBase().
+    // v3.X-fix-5b: expand each base type to its #1..MAX_INSTANCES_PER_BASE
+    // instances so users see one timeline row per instance. Row label
+    // uses getDeviceLabel so multi-instance shows "Stove (cooking) #2".
     for (const baseName of DEVICE_ROW_ORDER) {
-      const name = stateKeyForBase(baseName);
-      if (!(name in state.placed)) continue;
-      const row = document.createElement("div");
-      row.className = "timeline-row";
+      for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+        const name = `${baseName}#${n}`;
+        if (!(name in state.placed)) continue;
+        const row = document.createElement("div");
+        row.className = "timeline-row";
 
-      const rowLabel = document.createElement("div");
-      rowLabel.className = "timeline-row-label";
-      rowLabel.textContent = DEVICE_CATALOG[baseName].label;
-      row.appendChild(rowLabel);
+        const rowLabel = document.createElement("div");
+        rowLabel.className = "timeline-row-label";
+        rowLabel.textContent = getDeviceLabel(name, state.placed);
+        row.appendChild(rowLabel);
 
-      row.appendChild(makeBlock(name));
-      container.appendChild(row);
+        row.appendChild(makeBlock(name));
+        container.appendChild(row);
+      }
     }
   }
 
@@ -128,9 +131,11 @@
   }
 
   function updateBlockLabel(block, name) {
-    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
-    block.title = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
+    // v3.X-fix-5b: friendly label so multi-instance blocks are
+    // distinguishable on hover.
+    const friendly = getDeviceLabel(name, state.placed);
+    block.title = `${friendly} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
     const label = block.querySelector(".device-block-label");
     if (label) label.textContent = rangeLabel(pos.start, pos.duration);
   }
@@ -242,11 +247,14 @@
   function renderDeviceCards() {
     const root = $("device-cards");
     root.innerHTML = "";
-    // v3.X-fix-5a-patch: address suffixed state keys via stateKeyForBase().
+    // v3.X-fix-5b: render one card per instance #1..MAX_INSTANCES_PER_BASE
+    // so each cooking#N gets its own willing radio + reasons + drag block.
     for (const baseName of DEVICE_ROW_ORDER) {
-      const name = stateKeyForBase(baseName);
-      if (!(name in state.placed)) continue;
-      root.appendChild(makeDeviceCard(name));
+      for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+        const name = `${baseName}#${n}`;
+        if (!(name in state.placed)) continue;
+        root.appendChild(makeDeviceCard(name));
+      }
     }
   }
 
@@ -265,7 +273,9 @@
     swatch.className = "device-swatch";
     swatch.style.background = meta.color;
     const nameSpan = document.createElement("span");
-    nameSpan.textContent = meta.label;
+    // v3.X-fix-5b: show "Stove (cooking) #2" when multiple instances of
+    // the same base device exist; just "Stove (cooking)" when only one.
+    nameSpan.textContent = getDeviceLabel(name, state.placed);
     const rangeSpan = document.createElement("span");
     rangeSpan.className = "text-muted small ms-2";
     rangeSpan.dataset.role = "range";

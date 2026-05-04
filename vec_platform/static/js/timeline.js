@@ -56,28 +56,30 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
-    // One row per placed device, in a stable order so the visual doesn't jump.
-    // Order matches DEVICE_CATALOG declaration order (Phase 3.7-pre).
-    // v3.X-fix-5a-patch: state keys now carry a `#1` instance suffix; iterate
-    // base names but address state via stateKeyForBase().
+    // One row per placed device instance, in a stable order so the
+    // visual doesn't jump. Order is base-type order × instance number.
+    // v3.X-fix-5b: expand each base to up to MAX_INSTANCES_PER_BASE
+    // rows so users can see / drag multiple cookings, dishwashers, etc.
     const order = ["cooking", "dishwasher", "washing_machine",
                    "dryer", "oven_baking", "ev_charger"];
 
     for (const baseName of order) {
-      const name = stateKeyForBase(baseName);
-      if (!(name in state.placed)) continue;
-      const row = document.createElement("div");
-      row.className = "timeline-row";
+      for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+        const name = `${baseName}#${n}`;
+        if (!(name in state.placed)) continue;
+        const row = document.createElement("div");
+        row.className = "timeline-row";
 
-      const rowLabel = document.createElement("div");
-      rowLabel.className = "timeline-row-label";
-      rowLabel.textContent = DEVICE_CATALOG[baseName].label;
-      row.appendChild(rowLabel);
+        const rowLabel = document.createElement("div");
+        rowLabel.className = "timeline-row-label";
+        rowLabel.textContent = getDeviceLabel(name, state.placed);
+        row.appendChild(rowLabel);
 
-      const block = makeBlock(name);
-      row.appendChild(block);
+        const block = makeBlock(name);
+        row.appendChild(block);
 
-      container.appendChild(row);
+        container.appendChild(row);
+      }
     }
   }
 
@@ -112,9 +114,11 @@
   }
 
   function updateBlockLabel(block, name) {
-    const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
-    block.title = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
+    // v3.X-fix-5b: tooltip uses getDeviceLabel so multi-instance blocks
+    // are distinguishable on hover.
+    const friendly = getDeviceLabel(name, state.placed);
+    block.title = `${friendly} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
     const label = block.querySelector(".device-block-label");
     if (label) label.textContent = rangeLabel(pos.start, pos.duration);
   }
@@ -181,12 +185,15 @@
   // ---- Add / remove ----
   function addDevice(baseName) {
     // v3.X-fix-5a-patch: dropdown options carry the bare type name; state
-    // keying uses the suffixed instance key so device_shifts.device_name
+    // keying uses a suffixed instance key so device_shifts.device_name
     // sent to the backend matches what the engine produced for baseline
     // entries (cooking#1, etc.).
-    const name = stateKeyForBase(baseName);
-    if (name in state.placed) return;
+    // v3.X-fix-5b: pick the lowest free `#N` slot (up to MAX_…) so users
+    // can add up to 3 instances per type. Reuses freed slots after ×.
+    const name = nextStateKeyForBase(baseName, state.placed);
+    if (name === null) return;  // cap reached — UI also disables option
     const meta = DEVICE_CATALOG[baseName];
+    if (!meta) return;
     const defaults = state.originalPositions[name] || {
       start: meta.default_start,
       duration: meta.default_duration,
@@ -239,20 +246,24 @@
     const ul = $("device-instance-list");
     if (!ul) return;
     ul.innerHTML = "";
-    // v3.X-fix-5a-patch: DEVICE_LIST_ORDER is base names; state.placed is
-    // keyed by stateKeyForBase(...). Build a list of (baseName, stateKey)
-    // for every base type whose suffixed instance is currently placed.
-    const presentPairs = DEVICE_LIST_ORDER
-      .map((b) => [b, stateKeyForBase(b)])
-      .filter(([, k]) => k in state.placed);
-    if (presentPairs.length === 0) {
+    // v3.X-fix-5b: list each instance #1..MAX_INSTANCES_PER_BASE per
+    // base type. Replaces the fix-5a-patch (baseName, stateKey) pair
+    // approach which only saw the first instance.
+    const items = [];  // [(baseName, name), ...]
+    for (const baseName of DEVICE_LIST_ORDER) {
+      for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+        const name = `${baseName}#${n}`;
+        if (name in state.placed) items.push([baseName, name]);
+      }
+    }
+    if (items.length === 0) {
       const empty = document.createElement("li");
       empty.className = "device-instance-empty";
       empty.textContent = "No devices configured. Use [+ Add] below.";
       ul.appendChild(empty);
       return;
     }
-    for (const [baseName, name] of presentPairs) {
+    for (const [baseName, name] of items) {
       const meta = DEVICE_CATALOG[baseName];
       const pos = state.placed[name];
       const li = document.createElement("li");
@@ -266,14 +277,15 @@
 
       const label = document.createElement("span");
       label.className = "device-instance-label";
-      label.textContent = `${meta.label} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
+      const friendly = getDeviceLabel(name, state.placed);
+      label.textContent = `${friendly} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
       li.appendChild(label);
 
       const removeBtn = document.createElement("button");
       removeBtn.className = "device-remove-btn";
       removeBtn.type = "button";
       removeBtn.textContent = "×";
-      removeBtn.title = `Remove ${meta.label}`;
+      removeBtn.title = `Remove ${friendly}`;
       removeBtn.addEventListener("click", () => removeDevice(name));
       li.appendChild(removeBtn);
 
@@ -292,20 +304,33 @@
     placeholder.textContent = "Add a device…";
     select.appendChild(placeholder);
 
-    let count = 0;
+    // v3.X-fix-5b: keep every draggable type in the dropdown; disable
+    // an option once the user has hit MAX_INSTANCES_PER_BASE for that
+    // type, and annotate "(currently N)" / "(max 3 reached)" so the
+    // dropdown explains why a type can't be added again.
+    let addable = 0;
     for (const baseName of DEVICE_LIST_ORDER) {
       const meta = DEVICE_CATALOG[baseName];
       if (!meta || !meta.draggable) continue;
-      // single-instance: hide if the (only) instance is already placed.
-      if (stateKeyForBase(baseName) in state.placed) continue;
+      const present = countInstancesOfBase(baseName, state.placed);
       const opt = document.createElement("option");
       opt.value = baseName;        // dropdown carries the bare type;
                                    // addDevice() suffixes it on insert.
-      opt.textContent = meta.label;
+      if (present >= MAX_INSTANCES_PER_BASE) {
+        opt.disabled = true;
+        opt.textContent = `${meta.label} (max ${MAX_INSTANCES_PER_BASE} reached)`;
+      } else if (present >= 1) {
+        opt.textContent = `${meta.label} (add another, currently ${present})`;
+        addable++;
+      } else {
+        opt.textContent = meta.label;
+        addable++;
+      }
       select.appendChild(opt);
-      count++;
     }
-    select.disabled = count === 0;
+    select.disabled = addable === 0;
+    const count = addable;  // preserve original variable name for the
+                            // initial-button-state branch below.
     // Re-select previous choice if still in the dropdown (could have been
     // removed by an earlier addDevice).
     if (previous && [...select.options].some((o) => o.value === previous)) {
@@ -342,21 +367,26 @@
     // currently has in state.placed (which is mirrored in deviceArrays).
     // Picks up user-added types (dryer, oven_baking) automatically and
     // drops removed ones.
-    // v3.X-fix-5a-patch: deviceArrays keys carry `#1` suffix; iterate
-    // base names and address arrays via stateKeyForBase().
+    // v3.X-fix-5b: expand each base to its #1..MAX_INSTANCES_PER_BASE
+    // instances so multi-instance setups stack correctly. Trace name
+    // uses getDeviceLabel so the legend differentiates "Stove (cooking)"
+    // from "Stove (cooking) #2".
     for (const baseName of DEVICE_LIST_ORDER) {
-      const name = stateKeyForBase(baseName);
-      if (!(name in deviceArrays)) continue;
       const meta = DEVICE_CATALOG[baseName];
       if (!meta) continue;  // defensive: unknown device type
-      traces.push({
-        x, y: deviceArrays[name],
-        name: meta.label,
-        mode: "lines",
-        stackgroup: "load",
-        line: { width: 0.5, color: meta.color },
-        hovertemplate: `%{y:.2f} kW<extra>${meta.label}</extra>`,
-      });
+      for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+        const name = `${baseName}#${n}`;
+        if (!(name in deviceArrays)) continue;
+        const traceLabel = getDeviceLabel(name, state.placed);
+        traces.push({
+          x, y: deviceArrays[name],
+          name: traceLabel,
+          mode: "lines",
+          stackgroup: "load",
+          line: { width: 0.5, color: meta.color },
+          hovertemplate: `%{y:.2f} kW<extra>${traceLabel}</extra>`,
+        });
+      }
     }
     const hasPv = state.pvGeneration.some((v) => v > 0);
     if (hasPv) {

@@ -108,12 +108,51 @@ function stripInstanceSuffix(name) {
   return name.split("#", 1)[0];
 }
 
-// fix-5a-patch single-instance: dropdown produces bare names, but state
-// keys carry a `#1` suffix to stay consistent with the engine's device
-// dict and device_shifts.device_name. Centralised here so fix-5b can
-// swap this for a real multi-instance counter.
+// fix-5a-patch: dropdown produces bare names. The engine seeds baseline
+// instances at `#1`; this helper lets the iteration code address the
+// canonical first instance directly. fix-5b extends this with two
+// neighbours below for proper multi-instance support.
 function stateKeyForBase(baseName) {
   return baseName + "#1";
+}
+
+// v3.X-fix-5b: how many instances of a given base device are currently
+// in state.placed. 0..MAX_INSTANCES_PER_BASE.
+const MAX_INSTANCES_PER_BASE = 3;
+
+function countInstancesOfBase(baseName, statePlaced) {
+  let count = 0;
+  for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+    if ((baseName + "#" + n) in statePlaced) count++;
+  }
+  return count;
+}
+
+// v3.X-fix-5b: find the lowest unused #N slot for ``baseName``, scanning
+// `#1..#MAX_INSTANCES_PER_BASE`. Returns null when all slots are taken
+// (caller should treat as "cap reached"). Lowest-unused (rather than
+// next-after-highest) lets a freed slot be reused after × removal — so
+// removing #2 and re-adding gives `#2`, not `#4`.
+function nextStateKeyForBase(baseName, statePlaced) {
+  for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
+    const key = baseName + "#" + n;
+    if (!(key in statePlaced)) return key;
+  }
+  return null;
+}
+
+// v3.X-fix-5b: produce a user-friendly device label. When only one
+// instance exists, just the catalog label ("Stove (cooking)"). When
+// multiple, append "#N" so the user can tell them apart. Defensive:
+// returns the raw key if base is unknown.
+function getDeviceLabel(name, statePlaced) {
+  const base = stripInstanceSuffix(name);
+  const meta = DEVICE_CATALOG[base];
+  if (!meta) return name;
+  const total = countInstancesOfBase(base, statePlaced);
+  if (total <= 1) return meta.label;
+  const n = name.split("#")[1] || "1";
+  return `${meta.label} #${n}`;
 }
 
 function slotToTimeLabel(slot) {
