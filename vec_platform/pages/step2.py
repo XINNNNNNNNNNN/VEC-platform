@@ -21,23 +21,37 @@ from vec_platform.pages._helpers import _slot_to_hour
 
 
 # ==================== Step 2 ====================
-# Colors (consistent across steps) for each device in the stacked chart.
+# Phase 3.X-cleanup-1: align both dicts with the actual device catalog
+# at vec_platform/static/js/devices.js::DEVICE_CATALOG.
+#
+# Pre-cleanup state was a Phase 3.7-pre leftover: the dicts still listed
+# `cooking_am` / `cooking_pm` / `water_heater` (removed types) and were
+# missing `cooking` / `dryer` / `oven_baking` (current types). Since
+# `_load_curve_figure` uses `if d in devices` filtering, missing entries
+# silently dropped traces — the Step 2 chart never rendered cooking,
+# dryer, or oven_baking traces, even when those devices were on the
+# user's profile.
+#
+# Colors also unified with the Tailwind-style palette in devices.js so
+# the same device shows the same colour across Step 2 → Step 3 → Step 5
+# (was inconsistent: e.g. dishwasher blue-in-step2 / green-in-step3,
+# ev_charger green-in-step2 / purple-in-step3).
 _DEVICE_COLORS = {
     "base_load": "#6c757d",
-    "cooking_am": "#f39c12",
-    "cooking_pm": "#e67e22",
-    "water_heater": "#c0392b",
-    "dishwasher": "#3498db",
-    "washing_machine": "#2980b9",
-    "ev_charger": "#27ae60",
+    "cooking": "#F4B731",          # yellow
+    "dishwasher": "#22C55E",       # green
+    "washing_machine": "#3B82F6",  # blue
+    "dryer": "#F97316",            # orange
+    "oven_baking": "#DC2626",      # red
+    "ev_charger": "#A855F7",       # purple
 }
 _DEVICE_LABELS = {
     "base_load": "Base load (lighting, fridge, peaks)",
-    "cooking_am": "Cooking — morning",
-    "cooking_pm": "Cooking — evening",
-    "water_heater": "Water heater",
+    "cooking": "Stove (cooking)",
     "dishwasher": "Dishwasher",
     "washing_machine": "Washing machine",
+    "dryer": "Tumble dryer",
+    "oven_baking": "Oven (baking)",
     "ev_charger": "EV charger",
 }
 
