@@ -295,14 +295,6 @@ def step7_layout(session_id: str | None):
         dbc.Row([
             dbc.Col(
                 dbc.Button(
-                    "← Back to Step 6",
-                    href=f"/dash/step6?session_id={session_id}",
-                    color="secondary",
-                ),
-                width="auto",
-            ),
-            dbc.Col(
-                dbc.Button(
                     "Next → Final survey",
                     id="step7-next-btn",
                     color="primary",
@@ -310,7 +302,7 @@ def step7_layout(session_id: str | None):
                 ),
                 width="auto",
             ),
-        ], justify="between"),
+        ], justify="end"),
 
         # /dash/step8 lives within the Dash mount; refresh=True is kept
         # for symmetry with Step 4/6 redirect Locations (a forced reload

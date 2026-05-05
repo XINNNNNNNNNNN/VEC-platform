@@ -221,12 +221,6 @@ def step6_layout(session_id: str | None):
                 "Missing bill or profile data — please complete Step 1–5 first.",
                 color="warning",
             ),
-            dbc.Button(
-                "← Back to Step 5",
-                href=f"/step5?session_id={session_id}",
-                external_link=True,
-                color="secondary",
-            ),
         ])
 
     baseline_net = bills["no_vec"].net_cost
@@ -311,15 +305,6 @@ def step6_layout(session_id: str | None):
         dbc.Row([
             dbc.Col(
                 dbc.Button(
-                    "← Back to Step 5",
-                    href=f"/step5?session_id={session_id}",
-                    external_link=True,
-                    color="secondary",
-                ),
-                width="auto",
-            ),
-            dbc.Col(
-                dbc.Button(
                     "Next → Broader impacts",
                     id="step6-next-btn",
                     color="primary",
@@ -327,7 +312,7 @@ def step6_layout(session_id: str | None):
                 ),
                 width="auto",
             ),
-        ], justify="between"),
+        ], justify="end"),
 
         # /dash/step7 lives within the Dash mount, so this could in
         # principle ride on the root url Location's pathname. We keep a

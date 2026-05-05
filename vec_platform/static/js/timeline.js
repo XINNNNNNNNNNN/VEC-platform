@@ -464,7 +464,6 @@
       return;
     }
     $("session-label").textContent = `Session: ${state.sessionId.slice(0, 8)}…`;
-    $("btn-back").href = `/dash/step2?session_id=${state.sessionId}`;
 
     let profile;
     try {

@@ -293,20 +293,12 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
 
         dbc.Row([
             dbc.Col(
-                dbc.Button(
-                    "← Back to Step 7",
-                    href=f"/dash/step7?session_id={session_id}",
-                    color="secondary",
-                ),
-                width="auto",
-            ),
-            dbc.Col(
                 dbc.Button("Submit", id="btn-submit-survey",
                           color="primary", size="lg",
                           disabled=True),
                 width="auto",
             ),
-        ], justify="between"),
+        ], justify="end"),
     ])
 
 

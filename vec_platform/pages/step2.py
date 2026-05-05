@@ -164,7 +164,6 @@ def step2_layout(session_id: str | None):
         return html.Div([
             html.H2("Step 2: Your Electricity Profile"),
             dbc.Alert("No session found. Please start from Step 1.", color="warning"),
-            dbc.Button("← Back to Step 1", href="/dash/step1", color="secondary"),
         ])
 
     from vec_platform.models import DailyProfile, BillBreakdown
@@ -196,11 +195,6 @@ def step2_layout(session_id: str | None):
                 "No profile found for this session. Please complete Step 1 first.",
                 color="warning",
             ),
-            dbc.Button(
-                "← Back to Step 1",
-                href=f"/dash/step1?session_id={session_id}",
-                color="secondary",
-            ),
         ])
 
     devices = json.loads(profile.devices)
@@ -226,14 +220,6 @@ def step2_layout(session_id: str | None):
         dbc.Row([
             dbc.Col(
                 dbc.Button(
-                    "← Back",
-                    href=f"/dash/step1?session_id={session_id}",
-                    color="secondary",
-                ),
-                width="auto",
-            ),
-            dbc.Col(
-                dbc.Button(
                     "Next → Customize devices",
                     href=f"/step3?session_id={session_id}",
                     external_link=True,
@@ -241,5 +227,5 @@ def step2_layout(session_id: str | None):
                 ),
                 width="auto",
             ),
-        ], justify="between"),
+        ], justify="end"),
     ])

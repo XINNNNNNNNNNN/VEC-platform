@@ -203,7 +203,6 @@ def step4_layout(session_id: str | None):
         return html.Div([
             html.H2("Step 4: Tomorrow's community energy prices"),
             dbc.Alert("No session found. Please start from Step 1.", color="warning"),
-            dbc.Button("← Back to Step 1", href="/dash/step1", color="secondary"),
         ])
 
     db = SessionLocal()
@@ -220,12 +219,6 @@ def step4_layout(session_id: str | None):
             dbc.Alert(
                 "No bill found. Please complete Step 1–3 first.",
                 color="warning",
-            ),
-            dbc.Button(
-                "← Back to Step 3",
-                href=f"/step3?session_id={session_id}",
-                external_link=True,
-                color="secondary",
             ),
         ])
 
@@ -309,15 +302,6 @@ def step4_layout(session_id: str | None):
         dbc.Row([
             dbc.Col(
                 dbc.Button(
-                    "← Back to Step 3",
-                    href=f"/step3?session_id={session_id}",
-                    external_link=True,
-                    color="secondary",
-                ),
-                width="auto",
-            ),
-            dbc.Col(
-                dbc.Button(
                     "Next → Respond to prices",
                     id="step4-next-btn",
                     color="primary",
@@ -325,7 +309,7 @@ def step4_layout(session_id: str | None):
                 ),
                 width="auto",
             ),
-        ], justify="between"),
+        ], justify="end"),
 
         # /step5 lives outside the Dash mount; the root url Location has
         # refresh=False, so we use a dedicated refresh=True Location to
