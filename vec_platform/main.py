@@ -14,6 +14,31 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.wsgi import WSGIMiddleware
+from starlette.types import Scope
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles subclass that disables HTTP caching.
+
+    Phase 3.X-fix-5d: prevent browsers from serving stale JS/CSS during
+    development and after platform updates. Without this, users who
+    visited a previous version may keep running outdated client-side
+    code indefinitely (this caused the fix-5c data-loss bug across
+    multiple test sessions: server already had the fix-5c JS on disk,
+    but participants' browsers kept replaying the pre-fix JS so all
+    Step 3 device-shift POSTs were silently skipped).
+
+    The triple no-store / no-cache / must-revalidate is belt-and-braces
+    against various browser caching layers (HTTP cache, BFCache,
+    intermediate proxies). Pragma + Expires=0 cover legacy HTTP/1.0.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
 from dash import html, dcc
 from dash.dependencies import Input, Output, State
@@ -197,7 +222,7 @@ fastapi_app.mount("/dash", WSGIMiddleware(dash_app.server))
 # Mount static files
 static_path = Path(__file__).parent / "static"
 if static_path.exists():
-    fastapi_app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+    fastapi_app.mount("/static", NoCacheStaticFiles(directory=str(static_path)), name="static")
 
 
 # Export for uvicorn: uvicorn vec_platform.main:app --reload
