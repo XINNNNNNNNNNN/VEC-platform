@@ -610,12 +610,27 @@
         // FIRST shift call also carries the second prior-expectation guess
         // and the confidence Likert — backend writes a PriorExpectation
         // row (round=2) when both are present and step == 3.
+        //
+        // v3.X-fix-5c: iterate the union of state-key names actually in
+        // use, not DEVICE_CATALOG bare names. Pre-fix-5a the catalog
+        // keys (`cooking`, `dishwasher`, ...) lined up with state.placed
+        // / state.originalPositions; post-fix-5a state keys carry a `#N`
+        // suffix (cooking#1, cooking#2, ...) so the bare-name iteration
+        // missed every instance and silently dropped all device-shift
+        // POSTs. Union covers three cases:
+        //   - loaded baseline still placed (orig + placed both present)
+        //   - loaded baseline removed by × (orig only; final = 0)
+        //   - user-added instance (placed only; original = 0)
+        const shiftNames = new Set([
+          ...Object.keys(state.originalPositions),
+          ...Object.keys(state.placed),
+        ]);
         const shifts = [];
         let firstShiftSent = false;
-        for (const name of Object.keys(DEVICE_CATALOG)) {
+        for (const name of shiftNames) {
           const orig = state.originalPositions[name];
           const placed = state.placed[name];
-          if (!orig && !placed) continue;
+          if (!orig && !placed) continue;  // defensive — set above can't yield this
           const origStart = orig ? orig.start : 0;
           const origEnd = orig ? orig.start + orig.duration : 0;
           const finalStart = placed ? placed.start : 0;
