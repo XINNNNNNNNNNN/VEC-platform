@@ -50,6 +50,39 @@ _OCCUPATION_OPTIONS = [
 ]
 
 
+def _load_prior_step1(db, session_id: str) -> dict | None:
+    """v3.X-fix-6a: rehydrate the form when the user revisits Step 1 via
+    Back. Returns ``None`` for fresh sessions so the layout falls back to
+    its first-time defaults (area=75, people=2, everything else empty).
+
+    submit_step1 currently inserts a new UserInput row each time rather
+    than upserting, so we order by id desc and pick the latest row — the
+    user's most recent answers win on revisit. (Cleaning up the duplicate-
+    insert is a separate concern; here we just need to surface the right
+    one in the form.)
+    """
+    from vec_platform.models import UserInput
+    ui = (
+        db.query(UserInput)
+        .filter(UserInput.session_id == session_id)
+        .order_by(UserInput.id.desc())
+        .first()
+    )
+    if ui is None:
+        return None
+    der = []
+    if ui.has_pv:   der.append("pv")
+    if ui.has_bess: der.append("bess")
+    if ui.has_ev:   der.append("ev")
+    return {
+        "ownership_type": ui.ownership_type,
+        "der_options":    der,
+        "area_m2":        ui.area_m2,
+        "people":         ui.people,
+        "occupation":     ui.occupation,
+    }
+
+
 def step1_layout(session_id: str | None = None):
     session_note = (
         dbc.Alert(f"Session: {session_id}", color="light", className="py-2 small")
@@ -57,6 +90,22 @@ def step1_layout(session_id: str | None = None):
         dbc.Alert("No active session — open the site from '/' to create one.",
                   color="warning", className="py-2 small")
     )
+
+    # v3.X-fix-6a: hydrate from any previous Step 1 submission. pv_kwp /
+    # bess_kwh aren't surfaced in the form (submit_step1 derives defaults
+    # from has_pv / has_bess) so we don't restore those.
+    prior = None
+    if session_id:
+        db = SessionLocal()
+        try:
+            prior = _load_prior_step1(db, session_id)
+        finally:
+            db.close()
+    pv_owner_default = prior["ownership_type"] if prior else None
+    der_default      = prior["der_options"]    if prior else []
+    area_default     = int(prior["area_m2"])   if prior else 75
+    people_default   = prior["people"]         if prior else 2
+    occ_default      = prior["occupation"]     if prior else None
 
     return html.Div([
         html.H2("Step 1: Tell us about your home"),
@@ -71,7 +120,7 @@ def step1_layout(session_id: str | None = None):
                 dbc.RadioItems(
                     id="ownership-type",
                     options=_OWNERSHIP_OPTIONS,
-                    value=None,
+                    value=pv_owner_default,
                     className="mb-4",
                 ),
 
@@ -81,7 +130,7 @@ def step1_layout(session_id: str | None = None):
                 dbc.Checklist(
                     id="der-options",
                     options=_DER_OPTIONS,
-                    value=[],
+                    value=der_default,
                     className="mb-4",
                 ),
 
@@ -89,7 +138,7 @@ def step1_layout(session_id: str | None = None):
                 html.H5("Q3 · Approximate floor area of your home (m²)"),
                 dbc.Row([
                     dbc.Col(
-                        dbc.Input(id="area", type="number", value=75, min=30, max=300),
+                        dbc.Input(id="area", type="number", value=area_default, min=30, max=300),
                         width=4,
                     ),
                 ], className="mb-4"),
@@ -98,7 +147,7 @@ def step1_layout(session_id: str | None = None):
                 html.H5("Q4 · Number of people living in your home"),
                 dbc.Row([
                     dbc.Col(
-                        dbc.Input(id="people", type="number", value=2, min=1, max=6),
+                        dbc.Input(id="people", type="number", value=people_default, min=1, max=6),
                         width=4,
                     ),
                 ], className="mb-4"),
@@ -108,7 +157,7 @@ def step1_layout(session_id: str | None = None):
                 dbc.RadioItems(
                     id="occupation",
                     options=_OCCUPATION_OPTIONS,
-                    value=None,
+                    value=occ_default,
                     className="mb-3",
                 ),
 

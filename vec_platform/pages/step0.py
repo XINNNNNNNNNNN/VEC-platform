@@ -41,6 +41,30 @@ _CONSENT_OPTIONS = [
 _SLIDER_MARKS = {p: f"{p}%" for p in (0, 10, 20, 30, 40, 50)}
 
 
+def _load_prior_step0(db, session_id: str) -> dict | None:
+    """v3.X-fix-6a: rehydrate the slider when the user revisits Step 0 via
+    Back. Returns ``None`` if they haven't submitted Step 0 yet (fresh
+    session) so the layout falls back to the default ``0%`` initial pos.
+
+    Note: consent isn't persisted as a separate field — we infer "they
+    once consented" from the existence of the round=1 PriorExpectation
+    row (Step 0 submit only writes that row when consent is checked, see
+    ``submit_step0`` flow). We don't pre-tick consent on revisit
+    deliberately: re-affirming consent is the legally cleaner move and
+    costs the user one click.
+    """
+    from vec_platform.models import PriorExpectation
+    pe = (
+        db.query(PriorExpectation)
+        .filter(
+            PriorExpectation.session_id == session_id,
+            PriorExpectation.measurement_round == 1,
+        )
+        .first()
+    )
+    return {"pct": pe.pct} if pe else None
+
+
 def step0_layout(session_id: str | None = None):
     session_note = (
         dbc.Alert(f"Session: {session_id}", color="light", className="py-2 small")
@@ -50,6 +74,17 @@ def step0_layout(session_id: str | None = None):
             color="warning", className="py-2 small",
         )
     )
+
+    # v3.X-fix-6a: hydrate the slider from a previous Step 0 submission so
+    # users navigating Back don't lose their first guess.
+    prior = None
+    if session_id:
+        db = SessionLocal()
+        try:
+            prior = _load_prior_step0(db, session_id)
+        finally:
+            db.close()
+    initial_pct = int(prior["pct"]) if prior else 0
 
     return html.Div([
         html.H2("Welcome"),
@@ -88,12 +123,12 @@ def step0_layout(session_id: str | None = None):
                 ),
                 dcc.Slider(
                     id="step0-expectation-pct",
-                    min=0, max=50, step=1, value=0,
+                    min=0, max=50, step=1, value=initial_pct,
                     marks=_SLIDER_MARKS,
                     tooltip={"placement": "bottom", "always_visible": False},
                 ),
                 html.Div(
-                    "0%",
+                    f"{initial_pct}%",
                     id="step0-expectation-display",
                     className="text-center fs-4 fw-bold mt-3",
                 ),

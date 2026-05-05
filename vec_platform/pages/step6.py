@@ -195,6 +195,36 @@ def _compare_figure(net_baseline: list, net_customized: list, net_responsive: li
     return fig
 
 
+def _load_prior_step6(db, session_id: str) -> dict | None:
+    """v3.X-fix-6a: rehydrate the two Likerts when the user revisits via
+    Back. Q6-1 lives on survey_responses.step6_expectation_vs_reality;
+    Q6-2 is willingness_measurements(round=2). Either may be present
+    without the other depending on whether prior submissions partially
+    succeeded; we just surface whatever we have.
+    """
+    from vec_platform.models import SurveyResponse, WillingnessMeasurement
+    sr = (
+        db.query(SurveyResponse)
+        .filter(SurveyResponse.session_id == session_id)
+        .first()
+    )
+    wm = (
+        db.query(WillingnessMeasurement)
+        .filter(
+            WillingnessMeasurement.session_id == session_id,
+            WillingnessMeasurement.round == 2,
+        )
+        .order_by(WillingnessMeasurement.id.desc())
+        .first()
+    )
+    if sr is None and wm is None:
+        return None
+    return {
+        "expectation_vs_reality": sr.step6_expectation_vs_reality if sr else None,
+        "consider":               wm.value if wm else None,
+    }
+
+
 def step6_layout(session_id: str | None):
     if not session_id:
         return html.Div([
@@ -211,8 +241,12 @@ def step6_layout(session_id: str | None):
         p2 = _get_profile_at_step(db, session_id, 2)
         p3 = _get_profile_at_step(db, session_id, 3) or p2
         p5 = _get_profile_at_step(db, session_id, 5) or p3
+        # v3.X-fix-6a: piggyback prior-Likerts lookup on the same db block.
+        prior = _load_prior_step6(db, session_id)
     finally:
         db.close()
+    expect_default   = prior["expectation_vs_reality"] if prior else None
+    consider_default = prior["consider"]               if prior else None
 
     if any(b is None for b in bills.values()) or p2 is None:
         return html.Div([
@@ -280,7 +314,7 @@ def step6_layout(session_id: str | None):
                         {"label": "4 — More than I expected",       "value": 4},
                         {"label": "5 — Much more than I expected",  "value": 5},
                     ],
-                    value=None,
+                    value=expect_default,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
                 ),
             ]),
@@ -301,7 +335,7 @@ def step6_layout(session_id: str | None):
                         {"label": "4 — Probably yes",     "value": 4},
                         {"label": "5 — Definitely yes",   "value": 5},
                     ],
-                    value=None,
+                    value=consider_default,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
                 ),
                 html.Div(id="step6-error", className="text-danger small mt-2"),

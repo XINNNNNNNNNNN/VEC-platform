@@ -78,6 +78,27 @@ _LIKERT_OPTIONS = [
 
 # ==================== layout ====================
 
+def _load_prior_info_cal(db, session_id: str) -> dict | None:
+    """v3.X-fix-6a: rehydrate the Likert when the user revisits this page
+    via Back. Returns None for fresh sessions.
+
+    submit_info_cal writes one round=1 row per session — no upsert — so
+    a re-submit would double-insert. We just read the most recent row
+    here; idempotency on submit is a separate concern.
+    """
+    from vec_platform.models import WillingnessMeasurement
+    wm = (
+        db.query(WillingnessMeasurement)
+        .filter(
+            WillingnessMeasurement.session_id == session_id,
+            WillingnessMeasurement.round == 1,
+        )
+        .order_by(WillingnessMeasurement.id.desc())
+        .first()
+    )
+    return {"value": wm.value} if wm else None
+
+
 def info_calibration_layout(session_id: str | None = None):
     """Render the page with text matching this session's assigned arm."""
     if not session_id:
@@ -95,8 +116,12 @@ def info_calibration_layout(session_id: str | None = None):
     try:
         sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
         arm = sess.info_calibration_arm if sess else "C"
+        # v3.X-fix-6a: piggyback the prior-Likert lookup on the same db
+        # session that's already open for the arm read.
+        prior = _load_prior_info_cal(db, session_id)
     finally:
         db.close()
+    likert_default = prior["value"] if prior else None
 
     title, body, likert_q = _arm_content(arm)
 
@@ -113,7 +138,7 @@ def info_calibration_layout(session_id: str | None = None):
                 dcc.RadioItems(
                     id="info-cal-likert",
                     options=_LIKERT_OPTIONS,
-                    value=None,
+                    value=likert_default,
                     labelStyle={"display": "block"},
                 ),
             ]),

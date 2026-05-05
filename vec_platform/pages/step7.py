@@ -225,6 +225,23 @@ def _environment_tab(impacts: dict) -> html.Div:
     ])
 
 
+def _load_prior_step7(db, session_id: str) -> dict | None:
+    """v3.X-fix-6a: rehydrate the broader-impacts Likert when the user
+    revisits via Back. Returns None when the participant hasn't answered
+    Q7 yet (fresh visit OR a SurveyResponse row exists from earlier
+    steps but step7_broader_impacts_shift is still NULL).
+    """
+    from vec_platform.models import SurveyResponse
+    sr = (
+        db.query(SurveyResponse)
+        .filter(SurveyResponse.session_id == session_id)
+        .first()
+    )
+    if sr is None or sr.step7_broader_impacts_shift is None:
+        return None
+    return {"broader_impacts_shift": sr.step7_broader_impacts_shift}
+
+
 def step7_layout(session_id: str | None):
     if not session_id:
         return html.Div([
@@ -235,8 +252,11 @@ def step7_layout(session_id: str | None):
     db = SessionLocal()
     try:
         impacts = _compute_impacts(db, session_id)
+        # v3.X-fix-6a: piggyback prior-Likert lookup on the same db block.
+        prior = _load_prior_step7(db, session_id)
     finally:
         db.close()
+    likert_default = prior["broader_impacts_shift"] if prior else None
 
     if impacts is None:
         return html.Div([
@@ -285,7 +305,7 @@ def step7_layout(session_id: str | None):
                         {"label": "4 — It made me a bit more interested",  "value": 4},
                         {"label": "5 — It made me much more interested",   "value": 5},
                     ],
-                    value=None,
+                    value=likert_default,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
                 ),
                 html.Div(id="step7-error", className="text-danger small mt-2"),
