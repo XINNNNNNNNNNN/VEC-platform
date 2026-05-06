@@ -167,14 +167,8 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
 
 
 @dash_app.callback(
-    # Phase 3.X-fix-12: see step0.py for the rationale — declaring
-    # allow_duplicate on every callback that targets <Location id="url">
-    # is the only Dash-supported pattern for letting four submit handlers
-    # share the same Output. Step1 was the visible victim ("Next stuck"
-    # when fix-10 hid Q5 for low-familiarity sessions); fixing all four
-    # callbacks at once is the consistent path.
-    Output("url", "pathname", allow_duplicate=True),
-    Output("url", "search", allow_duplicate=True),
+    Output("url", "pathname"),
+    Output("url", "search"),
     Output("step1-error", "children"),
     Input("btn-next-step1", "n_clicks"),
     State("ownership-type", "value"),
