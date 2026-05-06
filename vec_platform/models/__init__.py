@@ -96,8 +96,12 @@ class UserInput(Base):
     # Replace v2 `building_type` (5-choice) and `heating` with these two.
     # MockEngine derives an internal building_type code from ownership + DER.
     ownership_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'tenant' | 'owner'
-    occupation: Mapped[str] = mapped_column(String(64), nullable=False)
-    # ^ 'energy_professional' | 'general_public' (Step 1 Q5; drives sessions.expertise)
+    # Step 1 Q5; drives sessions.expertise. Phase 3.X-fix-10 relaxed
+    # this to nullable: Q5 is conditionally rendered (only when
+    # vec_familiarity is in the top 2 of the 5-pt scale), so users
+    # below the gate write NULL here.
+    occupation: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # ^ 'energy_professional' | 'general_public' | NULL (not asked)
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="user_input")

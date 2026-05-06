@@ -187,10 +187,18 @@ def _radio_card(question: str, radio_id: str, options: list) -> dbc.Card:
 
 
 def _expert_block() -> list:
-    """Three expert-only questions. Caller decides whether to include."""
+    """Three extra questions for the high-familiarity subset. Caller
+    (step8_layout) decides whether to include via the
+    _EXPERT_FAMILIARITY_GATE check.
+
+    Phase 3.X-fix-10: removed the leading ``html.Hr()`` divider and the
+    ``html.H3("Expert questions")`` group title. Users gated on
+    vec_familiarity should not be told they're being singled out as
+    experts — the three cards visually blend in with the rest of Step 8.
+    The question wording is left intact (it lives inside the cards and
+    is part of the question content, not the framing).
+    """
     return [
-        html.Hr(),
-        html.H3("Expert questions", className="mt-4 mb-3"),
         _radio_card(
             "Based on your professional knowledge, how realistic is it "
             "that the savings shown in this study would actually be "

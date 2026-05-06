@@ -22,6 +22,12 @@ import dash_bootstrap_components as dbc
 
 from vec_platform.runtime import dash_app, SessionLocal, calculation_engine
 from vec_platform.pages._helpers import _parse_session_id
+# Phase 3.X-fix-10: share the same vec_familiarity threshold step8 uses to
+# gate the expert block, so the "are you in the high-familiarity subset?"
+# decision lives in exactly one place. step1 hides Q5 (occupation) when
+# the user is *below* the gate; step8 shows the expert block when the
+# user is *at or above* the gate. Both must pivot on identical values.
+from vec_platform.pages.step8 import _EXPERT_FAMILIARITY_GATE
 
 
 # ==================== Step 1 ====================
@@ -57,6 +63,38 @@ def step1_layout(session_id: str | None = None):
         dbc.Alert("No active session — open the site from '/' to create one.",
                   color="warning", className="py-2 small")
     )
+
+    # Phase 3.X-fix-10: Q5 (occupation / "energy professional?") is only
+    # asked of participants whose Step 0 vec_familiarity is in the top 2
+    # of the 5-pt scale. Users below the gate are extremely unlikely to
+    # be energy professionals, so the question is information-redundant
+    # for them — and hiding it removes a small surface for the demand
+    # effect. The high-familiarity subset is still asked, preserving the
+    # backward-compat comparison with the legacy expertise self-label.
+    show_occupation = False
+    if session_id:
+        from vec_platform.models import Session as SessionModel
+        db = SessionLocal()
+        try:
+            sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+            vec_fam = sess.vec_familiarity if sess else None
+        finally:
+            db.close()
+        show_occupation = vec_fam in _EXPERT_FAMILIARITY_GATE
+
+    occupation_block = []
+    if show_occupation:
+        occupation_block = [
+            # Q5: Occupation (drives sessions.expertise; conditionally
+            # rendered post fix-10).
+            html.H5("Q5 · Which best describes your background?"),
+            dbc.RadioItems(
+                id="occupation",
+                options=_OCCUPATION_OPTIONS,
+                value=None,
+                className="mb-3",
+            ),
+        ]
 
     return html.Div([
         html.H2("Step 1: Tell us about your home"),
@@ -103,14 +141,7 @@ def step1_layout(session_id: str | None = None):
                     ),
                 ], className="mb-4"),
 
-                # Q5: Occupation (drives sessions.expertise)
-                html.H5("Q5 · Which best describes your background?"),
-                dbc.RadioItems(
-                    id="occupation",
-                    options=_OCCUPATION_OPTIONS,
-                    value=None,
-                    className="mb-3",
-                ),
+                *occupation_block,
 
                 html.Hr(),
                 html.Div(id="step1-error", className="text-danger mb-2"),
@@ -147,17 +178,48 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
     if not n_clicks:
         return no_update, no_update, no_update
 
-    if (not ownership_type or area is None or people is None or not occupation):
-        return no_update, no_update, "Please answer all questions before continuing."
-
     from vec_platform.models import Session as SessionModel, UserInput
 
+    # Phase 3.X-fix-10: occupation is only required when the Q5 widget is
+    # actually rendered. The widget is conditionally rendered on a
+    # vec_familiarity threshold; for users below the gate the State ref
+    # comes back as None (suppress_callback_exceptions=True), and that's
+    # a legitimate "not asked" — not a missing answer.
     session_id = _parse_session_id(search)
+    occupation_required = False
+    if session_id:
+        _db = SessionLocal()
+        try:
+            _sess = _db.query(SessionModel).filter(SessionModel.id == session_id).first()
+            occupation_required = (
+                _sess is not None
+                and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
+            )
+        finally:
+            _db.close()
+
+    missing_required = (
+        not ownership_type
+        or area is None
+        or people is None
+        or (occupation_required and not occupation)
+    )
+    if missing_required:
+        return no_update, no_update, "Please answer all questions before continuing."
+
     der = der_options or []
     has_pv = "pv" in der
     has_bess = "bess" in der
     has_ev = "ev" in der
-    expertise = "expert" if occupation == "energy_professional" else "general"
+    # fix-10: derive expertise only when occupation was actually asked.
+    # When the question was hidden (low vec_familiarity), expertise stays
+    # NULL on the session row to mirror the "not asked" data semantics.
+    if occupation == "energy_professional":
+        expertise = "expert"
+    elif occupation == "general_public":
+        expertise = "general"
+    else:
+        expertise = None  # widget hidden or never answered
 
     db = SessionLocal()
     try:
@@ -172,16 +234,19 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
             db.add(session)
             db.flush()
 
-        # v3: drives Step 8's expert-only follow-ups.
-        session.expertise = expertise
+        # v3: drives Step 8's expert-only follow-ups (fix-9 actually moved
+        # that gate to vec_familiarity; expertise stays for backward-
+        # compat analysis).
+        if expertise is not None:
+            session.expertise = expertise
+        # else: leave existing value (None for fresh sessions; whatever
+        # was there for a re-submit). Don't overwrite with None.
         session.current_step = 2
-        # session.role kept for backward-compat but no longer written here —
-        # building_type is gone, and nothing in the codebase reads .role.
 
         user_input = UserInput(
             session_id=session_id,
             ownership_type=ownership_type,
-            occupation=occupation,
+            occupation=occupation,  # may be None when Q5 was hidden (fix-10)
             area_m2=float(area),
             people=int(people),
             has_pv=has_pv,
