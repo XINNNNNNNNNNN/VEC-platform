@@ -97,7 +97,13 @@ def step1_layout(session_id: str | None = None):
             dbc.RadioItems(
                 id="occupation",
                 options=_OCCUPATION_OPTIONS,
-                value=None,
+                # Phase 3.X-fix-13: default to "No" (general_public) so the
+                # high-familiarity participant who scrolls past Q5 without
+                # actively answering can still hit Next without a hard
+                # validation block. Self-identified energy professionals
+                # can still toggle to "Yes". Conservative default avoids
+                # accidentally tagging passive participants as expert.
+                value="general_public",
                 className="mb-3",
             ),
         ]
