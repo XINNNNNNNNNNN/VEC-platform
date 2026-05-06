@@ -287,19 +287,21 @@ class SurveyResponse(Base):
         String(8), nullable=True,
     )  # ISO-2 country code; defaults to 'SE' at submit time
 
-    # v3.X-fix-7 — E.ON alignment.
+    # v3.X-fix-7 / fix-8 — E.ON alignment.
     #   drivers_top3: E.ON Q13, max-3 multi-select stored as a JSON list.
     #     Allowed values: 'climate' / 'simplicity' / 'privacy' / 'savings'
     #     / 'transparency' / 'grid_benefit' / 'control' / 'community' /
-    #     'other'.  Asked at Step 8, just before the demographics block.
-    #   fairness_likert: E.ON Q11, 1..7 Likert ("how fair is preferential
-    #     treatment for VEC participants?"). Asked at Step 7, before the
-    #     broader-impacts shift Likert.
+    #     'other'. fix-8 merged the legacy Q2_reasons question into this
+    #     field — the 9 values keep E.ON Q13 cross-reference, but the
+    #     Step 8 layout shows them under the conversational Q2 wording
+    #     ("top reasons to join"). q2_reasons column kept as an escape
+    #     hatch for the legacy /api/survey endpoint but is no longer
+    #     written by the Step 8 submit handler.
+    #
+    # fairness_likert (E.ON Q11) was added in fix-7 and dropped in fix-8
+    # (overlap with q6_fairness_pref + no clean Step 7 placement).
     drivers_top3: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
-    )
-    fairness_likert: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True,
     )
 
     # Relationship

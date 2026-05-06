@@ -38,15 +38,6 @@ _Q1_OPTIONS = [
     {"label": "Not willing", "value": "not_willing"},
 ]
 
-_Q2_OPTIONS = [
-    {"label": "Save money on my bill", "value": "savings"},
-    {"label": "Environmental benefit", "value": "environment"},
-    {"label": "Support my local community", "value": "community"},
-    {"label": "More control over my energy", "value": "control"},
-    {"label": "Looks easy / convenient", "value": "convenience"},
-    {"label": "Other", "value": "other"},
-]
-
 _Q3_OPTIONS = [
     {"label": "Privacy of my usage data", "value": "privacy"},
     {"label": "Seems too complex to use", "value": "complexity"},
@@ -144,18 +135,21 @@ _COUNTRY_OPTIONS = [
     {"label": "Other",  "value": "OTHER"},
 ]
 
-# v3.X-fix-7 — E.ON Q13 alignment. Max-3 multi-select; stored as a
-# JSON-encoded list on survey_responses.drivers_top3.
+# v3.X-fix-7 / fix-8 — E.ON Q13 alignment + merged legacy Q2_reasons.
+# The 9 values keep E.ON Q13 cross-reference (so the column directly
+# compares to the E.ON survey); the visible labels were rewritten in
+# fix-8 to the conversational Q2-style wording for pilot UX.
+# Stored as a JSON-encoded list on survey_responses.drivers_top3.
 _DRIVERS_OPTIONS = [
-    {"label": "Climate & sustainability impact",                   "value": "climate"},
-    {"label": "Simplicity (low complexity / admin overhead)",      "value": "simplicity"},
-    {"label": "Data privacy",                                       "value": "privacy"},
-    {"label": "Cost savings",                                       "value": "savings"},
-    {"label": "Transparency of settlement / benefit allocation",   "value": "transparency"},
-    {"label": "Contribution to grid performance (grid benefit)",   "value": "grid_benefit"},
-    {"label": "Control / autonomy / resilience",                   "value": "control"},
-    {"label": "Community / social value",                          "value": "community"},
-    {"label": "Other",                                              "value": "other"},
+    {"label": "Save money on my bill",          "value": "savings"},
+    {"label": "Environmental / climate impact", "value": "climate"},
+    {"label": "Support my local community",     "value": "community"},
+    {"label": "More control over my energy",    "value": "control"},
+    {"label": "Looks simple / easy to use",     "value": "simplicity"},
+    {"label": "Privacy of my data",             "value": "privacy"},
+    {"label": "Transparent benefit sharing",    "value": "transparency"},
+    {"label": "Helps the local grid",           "value": "grid_benefit"},
+    {"label": "Other",                           "value": "other"},
 ]
 _DRIVERS_MAX = 3
 
@@ -213,17 +207,17 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
     expert = _expert_block() if is_expert else []
 
     return html.Div(id="step8-form", children=[
-        # ----- Q1-Q4 (existing v3 baseline) -----
+        # ----- Q1-Q3 baseline (v3.X-fix-8: original Q2 was merged into
+        # drivers_top3 below, so this block is now Q1 / Q2 (concerns) /
+        # Q3 (savings perception). The "top reasons" question lives in
+        # the drivers_top3 card further down.) -----
         html.H5("Q1 · How likely are you to actually join a VEC like this?"),
         dbc.RadioItems(id="survey-q1", options=_Q1_OPTIONS, value=None, className="mb-4"),
 
-        html.H5("Q2 · What would be your top reasons to join? (pick up to 3)"),
-        dbc.Checklist(id="survey-q2", options=_Q2_OPTIONS, value=[], className="mb-4"),
-
-        html.H5("Q3 · What would worry you the most? (pick up to 3)"),
+        html.H5("Q2 · What would worry you the most? (pick up to 3)"),
         dbc.Checklist(id="survey-q3", options=_Q3_OPTIONS, value=[], className="mb-4"),
 
-        html.H5("Q4 · Looking at the savings you saw in Step 6…"),
+        html.H5("Q3 · Looking at the savings you saw in Step 6…"),
         dbc.RadioItems(id="survey-q4", options=_Q4_OPTIONS, value=None, className="mb-3"),
 
         # ----- Q5 / Q6 / Q7 (v3.9) -----
@@ -280,12 +274,13 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
         # ----- expert block (conditional) -----
         *expert,
 
-        # ----- v3.X-fix-7: E.ON Q13 drivers top-3 (max 3 multi-select) -----
+        # ----- v3.X-fix-7 / fix-8: E.ON Q13 drivers top-3 (also serves
+        # as the merged Q2_reasons question) -----
         html.Hr(),
         dbc.Card(dbc.CardBody([
             html.H4(
-                f"What factors would most influence your decision to "
-                f"participate? (Select up to {_DRIVERS_MAX})"
+                f"What would be your top reasons to join a VEC like "
+                f"this? (pick up to {_DRIVERS_MAX})"
             ),
             dcc.Checklist(
                 id="step8-drivers-top3",
@@ -471,9 +466,12 @@ def toggle_step8_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
     Output("step8-content", "children"),
     Output("survey-error", "children"),
     Input("btn-submit-survey", "n_clicks"),
-    # Q1-Q4 — existing baseline
+    # Q1 + Q3 (concerns) + Q4 (savings perception) — baseline.
+    # v3.X-fix-8: the legacy "Q2_reasons" multi-select was merged into
+    # drivers_top3, so survey-q2 is no longer captured here. The
+    # survey_responses.q2_reasons column survives as an escape hatch
+    # for the legacy /api/survey endpoint.
     State("survey-q1", "value"),
-    State("survey-q2", "value"),
     State("survey-q3", "value"),
     State("survey-q4", "value"),
     # v3.9 new states
@@ -493,7 +491,7 @@ def toggle_step8_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_survey(n_clicks, q1, q2, q3, q4,
+def submit_survey(n_clicks, q1, q3, q4,
                   q5, q6, q7,
                   entry_pct, exit_t, final_w,
                   eq1, eq2, eq3,
@@ -506,8 +504,10 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
     Expert states (eq1/eq2/eq3) come back as None when the expert block
     isn't rendered (suppress_callback_exceptions=True is set globally).
 
-    v3.X-fix-7 adds drivers_top3 (E.ON Q13) to the upsert. Stored as a
-    JSON-encoded list, capped at _DRIVERS_MAX.
+    v3.X-fix-7 added drivers_top3 (E.ON Q13). v3.X-fix-8 merged the
+    legacy Q2_reasons question into drivers_top3 (same semantic — "top
+    reasons to join"); q2_reasons column is kept on the table for the
+    /api/survey escape hatch but is no longer written here.
     """
     if not n_clicks:
         return no_update, no_update
@@ -533,7 +533,6 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
 
     # Cap multi-selects at 3 so "top 3" is enforced in the data.
-    q2_trim = (q2 or [])[:3]
     q3_trim = (q3 or [])[:3]
     drivers_trim = (drivers or [])[:_DRIVERS_MAX]
 
@@ -546,7 +545,6 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
         # 1) survey_responses — upsert all fields onto the per-session row.
         row = get_or_create_survey_row(db, session_id)
         row.q1_willingness = q1
-        row.q2_reasons = json.dumps(q2_trim)
         row.q3_concerns = json.dumps(q3_trim)
         row.q4_savings_perception = q4
         row.q5_trust_source = q5
@@ -558,7 +556,7 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
         row.demo_age_range = age
         row.demo_gender = gender
         row.demo_country = country or "SE"
-        row.drivers_top3 = json.dumps(drivers_trim)  # v3.X-fix-7
+        row.drivers_top3 = json.dumps(drivers_trim)  # v3.X-fix-7 / fix-8
 
         # 2) exit_thresholds — single row per session (upsert pattern).
         et = (
