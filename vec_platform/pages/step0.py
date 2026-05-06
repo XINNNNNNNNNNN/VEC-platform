@@ -173,8 +173,16 @@ def toggle_next_button(consent_values, vec_familiarity):
 
 
 @dash_app.callback(
-    Output("url", "pathname"),
-    Output("url", "search"),
+    # Phase 3.X-fix-12: declare allow_duplicate so the four callbacks
+    # that drive the root <Location id="url"> (step0/step1/info_cal/
+    # tenant_disclaimer) coexist cleanly. Without this, Dash's strict
+    # duplicate-Output detection silently dropped the step1 dispatch
+    # when its State("occupation", "value") referenced a hidden widget
+    # (fix-10 conditional render), leaving Next "stuck" for participants
+    # below the familiarity gate. info_calibration / tenant_disclaimer
+    # already used this pattern.
+    Output("url", "pathname", allow_duplicate=True),
+    Output("url", "search", allow_duplicate=True),
     Output("step0-error", "children"),
     Input("step0-next-btn", "n_clicks"),
     State("step0-expectation-pct", "value"),
