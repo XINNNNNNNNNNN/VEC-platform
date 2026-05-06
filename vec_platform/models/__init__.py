@@ -45,6 +45,15 @@ class Session(Base):
         String(16), default="general", server_default="general", nullable=False,
     )
 
+    # v3.X-fix-7 — E.ON Q9 alignment. 5-point self-rated familiarity with
+    # the VEC concept, asked at Step 0 *before* the first prior-expectation
+    # slider so it serves as a baseline covariate for the info-calibration
+    # A/B/C arm analysis. Values: 'never_heard' / 'heard_no_understand' /
+    # 'somewhat_familiar' / 'very_familiar' / 'have_participated'.
+    vec_familiarity: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True,
+    )
+
     # Relationships
     user_input: Mapped[Optional["UserInput"]] = relationship(
         "UserInput", back_populates="session", uselist=False
@@ -277,6 +286,21 @@ class SurveyResponse(Base):
     demo_country: Mapped[Optional[str]] = mapped_column(
         String(8), nullable=True,
     )  # ISO-2 country code; defaults to 'SE' at submit time
+
+    # v3.X-fix-7 — E.ON alignment.
+    #   drivers_top3: E.ON Q13, max-3 multi-select stored as a JSON list.
+    #     Allowed values: 'climate' / 'simplicity' / 'privacy' / 'savings'
+    #     / 'transparency' / 'grid_benefit' / 'control' / 'community' /
+    #     'other'.  Asked at Step 8, just before the demographics block.
+    #   fairness_likert: E.ON Q11, 1..7 Likert ("how fair is preferential
+    #     treatment for VEC participants?"). Asked at Step 7, before the
+    #     broader-impacts shift Likert.
+    drivers_top3: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+    )
+    fairness_likert: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="survey_response")

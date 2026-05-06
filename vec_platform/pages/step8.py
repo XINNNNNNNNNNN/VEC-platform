@@ -144,6 +144,21 @@ _COUNTRY_OPTIONS = [
     {"label": "Other",  "value": "OTHER"},
 ]
 
+# v3.X-fix-7 — E.ON Q13 alignment. Max-3 multi-select; stored as a
+# JSON-encoded list on survey_responses.drivers_top3.
+_DRIVERS_OPTIONS = [
+    {"label": "Climate & sustainability impact",                   "value": "climate"},
+    {"label": "Simplicity (low complexity / admin overhead)",      "value": "simplicity"},
+    {"label": "Data privacy",                                       "value": "privacy"},
+    {"label": "Cost savings",                                       "value": "savings"},
+    {"label": "Transparency of settlement / benefit allocation",   "value": "transparency"},
+    {"label": "Contribution to grid performance (grid benefit)",   "value": "grid_benefit"},
+    {"label": "Control / autonomy / resilience",                   "value": "control"},
+    {"label": "Community / social value",                          "value": "community"},
+    {"label": "Other",                                              "value": "other"},
+]
+_DRIVERS_MAX = 3
+
 
 # ----- form layout -----
 
@@ -265,8 +280,23 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
         # ----- expert block (conditional) -----
         *expert,
 
-        # ----- demographics -----
+        # ----- v3.X-fix-7: E.ON Q13 drivers top-3 (max 3 multi-select) -----
         html.Hr(),
+        dbc.Card(dbc.CardBody([
+            html.H4(
+                f"What factors would most influence your decision to "
+                f"participate? (Select up to {_DRIVERS_MAX})"
+            ),
+            dcc.Checklist(
+                id="step8-drivers-top3",
+                options=_DRIVERS_OPTIONS,
+                value=[],
+                labelStyle={"display": "block", "padding": "0.2rem 0"},
+            ),
+            html.Div(id="step8-drivers-warn", className="text-warning small mt-1"),
+        ]), className="mb-3"),
+
+        # ----- demographics -----
         html.H3("A few questions about you", className="mt-4 mb-3"),
         dbc.Card(dbc.CardBody([
             html.H4("Age range"),
@@ -393,6 +423,18 @@ def update_step8_entry_threshold_display(pct):
 
 
 @dash_app.callback(
+    Output("step8-drivers-warn", "children"),
+    Input("step8-drivers-top3", "value"),
+)
+def warn_drivers_max(values):
+    """v3.X-fix-7: warn when the user picks more than _DRIVERS_MAX
+    options. The submit gate also enforces the cap (defensive)."""
+    if values and len(values) > _DRIVERS_MAX:
+        return f"Please select at most {_DRIVERS_MAX} options."
+    return ""
+
+
+@dash_app.callback(
     Output("btn-submit-survey", "disabled"),
     Input("survey-q1", "value"),
     Input("survey-q4", "value"),
@@ -403,19 +445,26 @@ def update_step8_entry_threshold_display(pct):
     Input("step8-final-willingness", "value"),
     Input("step8-demo-age", "value"),
     Input("step8-demo-gender", "value"),
+    Input("step8-drivers-top3", "value"),
 )
-def toggle_step8_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender):
+def toggle_step8_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, drivers):
     """Lock Submit until every required question has a value.
 
     Required: Q1, Q4, Q5, Q6, Q7, exit threshold, final willingness, age,
-    gender. NOT required:
+    gender. v3.X-fix-7 added drivers_top3 — must be 1.._DRIVERS_MAX picks.
+    NOT required:
       - Q2/Q3 multi-select (empty list is acceptable, matches v3 baseline)
       - entry threshold slider (default 0% counts as answered)
       - country dropdown (default 'SE' counts as answered)
       - expert questions (optional even for experts — don't block them)
     """
     required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
-    return any(v is None for v in required)
+    if any(v is None for v in required):
+        return True
+    n = len(drivers or [])
+    if n < 1 or n > _DRIVERS_MAX:
+        return True
+    return False
 
 
 @dash_app.callback(
@@ -440,6 +489,7 @@ def toggle_step8_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender):
     State("step8-demo-age", "value"),
     State("step8-demo-gender", "value"),
     State("step8-demo-country", "value"),
+    State("step8-drivers-top3", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
@@ -448,12 +498,16 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
                   entry_pct, exit_t, final_w,
                   eq1, eq2, eq3,
                   age, gender, country,
+                  drivers,
                   search):
     """v3.9: writes survey_responses (upsert) + exit_thresholds (upsert) +
     willingness_measurements(round=3) + flips sessions.completed=True.
 
     Expert states (eq1/eq2/eq3) come back as None when the expert block
     isn't rendered (suppress_callback_exceptions=True is set globally).
+
+    v3.X-fix-7 adds drivers_top3 (E.ON Q13) to the upsert. Stored as a
+    JSON-encoded list, capped at _DRIVERS_MAX.
     """
     if not n_clicks:
         return no_update, no_update
@@ -467,6 +521,9 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
     required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
     if any(v is None for v in required):
         return no_update, "Please answer all required questions."
+    drivers_count = len(drivers or [])
+    if drivers_count < 1 or drivers_count > _DRIVERS_MAX:
+        return no_update, f"Please pick between 1 and {_DRIVERS_MAX} drivers."
 
     from vec_platform.models import (
         Session as SessionModel,
@@ -478,6 +535,7 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
     # Cap multi-selects at 3 so "top 3" is enforced in the data.
     q2_trim = (q2 or [])[:3]
     q3_trim = (q3 or [])[:3]
+    drivers_trim = (drivers or [])[:_DRIVERS_MAX]
 
     db = SessionLocal()
     try:
@@ -500,6 +558,7 @@ def submit_survey(n_clicks, q1, q2, q3, q4,
         row.demo_age_range = age
         row.demo_gender = gender
         row.demo_country = country or "SE"
+        row.drivers_top3 = json.dumps(drivers_trim)  # v3.X-fix-7
 
         # 2) exit_thresholds — single row per session (upsert pattern).
         et = (

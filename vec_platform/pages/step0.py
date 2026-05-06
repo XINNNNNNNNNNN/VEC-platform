@@ -38,6 +38,17 @@ _CONSENT_OPTIONS = [
     },
 ]
 
+# v3.X-fix-7 — E.ON Q9 alignment. Asked before the prior-expectation
+# slider so the answer is a true baseline (no anchoring from any
+# numbers shown later in the flow).
+_VEC_FAMILIARITY_OPTIONS = [
+    {"label": "Never heard of it",                              "value": "never_heard"},
+    {"label": "Heard of it, but don't really understand it",    "value": "heard_no_understand"},
+    {"label": "Somewhat familiar",                              "value": "somewhat_familiar"},
+    {"label": "Very familiar",                                  "value": "very_familiar"},
+    {"label": "Have participated in a similar initiative",      "value": "have_participated"},
+]
+
 _SLIDER_MARKS = {p: f"{p}%" for p in (0, 10, 20, 30, 40, 50)}
 
 
@@ -74,6 +85,28 @@ def step0_layout(session_id: str | None = None):
                     id="step0-consent",
                     options=_CONSENT_OPTIONS,
                     value=[],
+                ),
+            ]),
+        ], className="mb-3"),
+
+        # v3.X-fix-7 — E.ON Q9 baseline familiarity (must precede the
+        # expectation slider so it captures pre-exposure knowledge).
+        dbc.Card([
+            dbc.CardBody([
+                html.H5("Before we start: how familiar are you with this concept?"),
+                html.P(
+                    "Virtual energy sharing means electricity is shared via the "
+                    "existing grid through agreements between buyers and sellers, "
+                    "not through new cables. The electricity is transported as "
+                    "usual in the grid and the benefits are shared between "
+                    "participants.",
+                    className="text-muted small",
+                ),
+                dcc.RadioItems(
+                    id="step0-vec-familiarity",
+                    options=_VEC_FAMILIARITY_OPTIONS,
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.2rem 0"},
                 ),
             ]),
         ], className="mb-3"),
@@ -127,10 +160,16 @@ def update_expectation_display(pct):
 @dash_app.callback(
     Output("step0-next-btn", "disabled"),
     Input("step0-consent", "value"),
+    Input("step0-vec-familiarity", "value"),
 )
-def toggle_next_button(consent_values):
-    """Lock Next until the consent checkbox is ticked."""
-    return "agreed" not in (consent_values or [])
+def toggle_next_button(consent_values, vec_familiarity):
+    """Lock Next until both the consent checkbox is ticked AND the
+    familiarity radio (v3.X-fix-7) has been answered."""
+    if "agreed" not in (consent_values or []):
+        return True
+    if vec_familiarity is None:
+        return True
+    return False
 
 
 @dash_app.callback(
@@ -139,11 +178,13 @@ def toggle_next_button(consent_values):
     Output("step0-error", "children"),
     Input("step0-next-btn", "n_clicks"),
     State("step0-expectation-pct", "value"),
+    State("step0-vec-familiarity", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step0(n_clicks, pct, search):
-    """Persist the first prior-expectation row and hand off to Step 1.
+def submit_step0(n_clicks, pct, vec_familiarity, search):
+    """Persist the first prior-expectation row, stamp sessions.vec_familiarity
+    (v3.X-fix-7), and hand off to Step 1.
 
     Outputs to the existing root-level ``dcc.Location id='url'`` rather
     than a Step-0-private one — same pattern as ``submit_step1``.
@@ -154,6 +195,11 @@ def submit_step0(n_clicks, pct, search):
     session_id = _parse_session_id(search)
     if not session_id:
         return no_update, no_update, "Session id missing — please start from '/'."
+
+    # v3.X-fix-7: defensive validation. The Next button is gated until
+    # vec_familiarity is set, but a synthetic click could bypass it.
+    if vec_familiarity is None:
+        return no_update, no_update, "Please answer the familiarity question."
 
     from vec_platform.models import (
         Session as SessionModel,
@@ -166,6 +212,7 @@ def submit_step0(n_clicks, pct, search):
         if sess is None:
             return no_update, no_update, "Session not found — please start from '/'."
 
+        sess.vec_familiarity = vec_familiarity
         db.add(PriorExpectation(
             session_id=session_id,
             measurement_round=1,

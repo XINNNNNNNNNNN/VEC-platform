@@ -267,8 +267,41 @@ def step7_layout(session_id: str | None):
         ),
         tabs,
 
-        # ----- v3.8: broader-impacts Likert -----
+        # ----- v3.X-fix-7: E.ON Q11 fairness Likert (1..7) -----
+        # Asked before the Phase 3.8 broader-impacts shift Likert so the
+        # judgment about preferential treatment is captured before the
+        # shift question reframes things in personal-interest terms.
         html.Hr(),
+        dbc.Card([
+            dbc.CardBody([
+                html.H4(
+                    "How fair would it be if VEC participants get lower "
+                    "fees or taxes while non-participants don't?"
+                ),
+                html.P(
+                    "An energy community is a group of people who come "
+                    "together to produce, store, or share renewable "
+                    "energy.",
+                    className="text-muted small",
+                ),
+                dcc.RadioItems(
+                    id="step7-fairness-likert",
+                    options=[
+                        {"label": "1 — Not at all fair", "value": 1},
+                        {"label": "2",                    "value": 2},
+                        {"label": "3",                    "value": 3},
+                        {"label": "4 — Neutral",          "value": 4},
+                        {"label": "5",                    "value": 5},
+                        {"label": "6",                    "value": 6},
+                        {"label": "7 — Very fair",        "value": 7},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+            ]),
+        ], className="mb-3"),
+
+        # ----- v3.8: broader-impacts Likert -----
         dbc.Card([
             dbc.CardBody([
                 html.H4(
@@ -316,10 +349,12 @@ def step7_layout(session_id: str | None):
 @dash_app.callback(
     Output("step7-next-btn", "disabled"),
     Input("step7-broader-impacts-shift", "value"),
+    Input("step7-fairness-likert", "value"),
 )
-def toggle_step7_next(v):
-    """Lock Next until the Likert is picked."""
-    return v is None
+def toggle_step7_next(shift_v, fairness_v):
+    """Lock Next until both the v3.8 shift Likert AND the v3.X-fix-7
+    fairness Likert have been answered."""
+    return shift_v is None or fairness_v is None
 
 
 @dash_app.callback(
@@ -327,19 +362,21 @@ def toggle_step7_next(v):
     Output("step7-error", "children"),
     Input("step7-next-btn", "n_clicks"),
     State("step7-broader-impacts-shift", "value"),
+    State("step7-fairness-likert", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step7(n_clicks, q, search):
-    """Upsert Q7 onto survey_responses, then nav to /dash/step8."""
+def submit_step7(n_clicks, shift_q, fairness_q, search):
+    """Upsert Q7 (broader-impacts shift) + Q11 (fairness, v3.X-fix-7) onto
+    survey_responses, then nav to /dash/step8."""
     if not n_clicks:
         return no_update, no_update
 
     session_id = _parse_session_id(search)
     if not session_id:
         return no_update, "Session id missing — please start from '/'."
-    if q is None:
-        return no_update, "Please select an option."
+    if shift_q is None or fairness_q is None:
+        return no_update, "Please answer both questions."
 
     from vec_platform.models import Session as SessionModel
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
@@ -351,7 +388,8 @@ def submit_step7(n_clicks, q, search):
             return no_update, "Session not found."
 
         row = get_or_create_survey_row(db, session_id)
-        row.step7_broader_impacts_shift = int(q)
+        row.step7_broader_impacts_shift = int(shift_q)
+        row.fairness_likert = int(fairness_q)
 
         if sess.current_step is None or sess.current_step < 8:
             sess.current_step = 8
