@@ -105,13 +105,17 @@ def step1_layout(session_id: str | None = None):
             dbc.RadioItems(
                 id="occupation",
                 options=_OCCUPATION_OPTIONS,
-                # Phase 3.X-fix-13: default to "No" (general_public) so the
-                # high-familiarity participant who scrolls past Q5 without
-                # actively answering can still hit Next without a hard
-                # validation block. Self-identified energy professionals
-                # can still toggle to "Yes". Conservative default avoids
-                # accidentally tagging passive participants as expert.
-                value="general_public",
+                # Phase 3.X-fix-15: no default value — high-familiarity
+                # participants must actively pick Yes/No so the answer
+                # carries real intent (a default would silently classify
+                # passive participants and pollute the data semantic).
+                # Low-familiarity participants don't see Q5 at all
+                # (fix-14 hides the wrapper Div with display:none) and
+                # their occupation State arrives at submit as None;
+                # submit_step1's fix-10 conditional-required check skips
+                # that validation when vec_familiarity is below the gate,
+                # so None-occupation low-fam users still pass Next.
+                value=None,
                 className="mb-3",
             ),
         ],
