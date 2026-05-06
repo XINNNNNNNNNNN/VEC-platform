@@ -5,7 +5,9 @@ v3.9 expansion (Phase 3.9):
   - Q5 trust source / Q6 fairness preference / Q7 transparency preference
   - Entry threshold slider + exit threshold radio
   - Final willingness Likert (3rd/last willingness measurement, round=3)
-  - Expert-only block (3 questions, conditional on sessions.expertise)
+  - Expert-only block (3 questions; v3.X-fix-9 gates on
+    sessions.vec_familiarity ∈ _EXPERT_FAMILIARITY_GATE — replaces the
+    earlier sessions.expertise self-label gate)
   - Demographics block (age / gender / country)
 
 Submitting upserts survey_responses, upserts a single exit_thresholds
@@ -135,6 +137,20 @@ _COUNTRY_OPTIONS = [
     {"label": "Other",  "value": "OTHER"},
 ]
 
+# Phase 3.X-fix-9: expert block now gated by vec_familiarity (top 2 of
+# the 5-pt scale: 'very_familiar' or 'have_participated'). Replaces the
+# Phase 3.9 / fix-3.9 gate of `expertise == 'expert'`, which was a Step 1
+# occupation self-label. Self-labelling has low validity and risks demand
+# effect (people who tick "energy professional" may answer differently
+# *because* of the label); a prior-knowledge proxy from Step 0's
+# familiarity slider is methodologically cleaner.
+#
+# Backward compat: sessions.expertise + user_inputs.occupation columns
+# (and the Step 1 occupation question) are intentionally preserved.
+# Analyses can compare self-label vs. familiarity-gate definitions.
+_EXPERT_FAMILIARITY_GATE = {"very_familiar", "have_participated"}
+
+
 # v3.X-fix-7 / fix-8 — E.ON Q13 alignment + merged legacy Q2_reasons.
 # The 9 values keep E.ON Q13 cross-reference (so the column directly
 # compares to the E.ON survey); the visible labels were rewritten in
@@ -202,7 +218,10 @@ def _expert_block() -> list:
 
 
 def _survey_form(session_id: str, is_expert: bool) -> html.Div:
-    """Full survey form. Expert block is conditional on sessions.expertise."""
+    """Full survey form. Expert block visibility is decided by the caller
+    (step8_layout) — v3.X-fix-9 derives ``is_expert`` from
+    ``sessions.vec_familiarity ∈ _EXPERT_FAMILIARITY_GATE`` instead of
+    the former ``sessions.expertise == 'expert'`` self-label."""
 
     expert = _expert_block() if is_expert else []
 
@@ -390,7 +409,10 @@ def step8_layout(session_id: str | None):
             _thank_you_view(),
         ])
 
-    is_expert = (session.expertise == "expert")
+    # v3.X-fix-9: gate switched from expertise self-label to a
+    # vec_familiarity threshold (top 2 of the 5-pt scale). expertise
+    # remains readable on the session object for backward compat.
+    is_expert = (session.vec_familiarity in _EXPERT_FAMILIARITY_GATE)
 
     return html.Div([
         html.H2("Step 8: Your decision"),
