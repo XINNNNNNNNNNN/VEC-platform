@@ -82,12 +82,20 @@ def step1_layout(session_id: str | None = None):
             db.close()
         show_occupation = vec_fam in _EXPERT_FAMILIARITY_GATE
 
-    occupation_block = []
-    if show_occupation:
-        occupation_block = [
-            # Q5: Occupation (drives sessions.expertise; conditionally
-            # rendered post fix-10; rephrased as a yes/no question post
-            # fix-11 with the scope description moved to a subtitle).
+    # Phase 3.X-fix-14: the Q5 block is *always* rendered into the DOM,
+    # but the wrapper html.Div is CSS-hidden (display:none) for the
+    # low-familiarity subset. Earlier (fix-10) the block was conditionally
+    # appended; that caused submit_step1's State("occupation", "value")
+    # to reference a missing component and Dash strict-mode raised a
+    # ReferenceError, leaving Step 1 stuck on Next for low-familiarity
+    # sessions. Always-in-DOM + CSS visibility keeps the callback graph
+    # valid; fix-13's 'general_public' default value means the hidden
+    # widget reports a truthy value to submit_step1 so validation passes.
+    occupation_block = html.Div(
+        [
+            # Q5: Occupation (drives sessions.expertise; rephrased as a
+            # yes/no question post fix-11 with the scope description in
+            # a subtitle).
             html.H5("Q5 · Are you an energy-related researcher or professional?"),
             html.P(
                 "(works/studies in energy industry, utilities, energy "
@@ -106,7 +114,9 @@ def step1_layout(session_id: str | None = None):
                 value="general_public",
                 className="mb-3",
             ),
-        ]
+        ],
+        style={} if show_occupation else {"display": "none"},
+    )
 
     return html.Div([
         html.H2("Step 1: Tell us about your home"),
@@ -153,7 +163,7 @@ def step1_layout(session_id: str | None = None):
                     ),
                 ], className="mb-4"),
 
-                *occupation_block,
+                occupation_block,
 
                 html.Hr(),
                 html.Div(id="step1-error", className="text-danger mb-2"),
