@@ -43,16 +43,16 @@ _DER_OPTIONS = [
     {"label": "Electric vehicle (EV)", "value": "ev"},
 ]
 
+# Phase 3.X-fix-11: labels reduced to Yes/No after the question itself
+# was rephrased into a yes/no form ("Are you an energy-related researcher
+# or professional?"). The scope description that used to live inside the
+# long label moved into a P subtitle next to the H5. Values are preserved
+# verbatim ('energy_professional' / 'general_public') so submit_step1's
+# expertise derivation (line ~217) and any pre-fix-11 rows in
+# user_inputs.occupation stay 1:1 compatible.
 _OCCUPATION_OPTIONS = [
-    {
-        "label": (
-            "Energy-related researcher or professional "
-            "(works/studies in energy industry, utilities, energy research, "
-            "or energy policy)"
-        ),
-        "value": "energy_professional",
-    },
-    {"label": "Other (general public)", "value": "general_public"},
+    {"label": "Yes", "value": "energy_professional"},
+    {"label": "No",  "value": "general_public"},
 ]
 
 
@@ -86,8 +86,14 @@ def step1_layout(session_id: str | None = None):
     if show_occupation:
         occupation_block = [
             # Q5: Occupation (drives sessions.expertise; conditionally
-            # rendered post fix-10).
-            html.H5("Q5 · Which best describes your background?"),
+            # rendered post fix-10; rephrased as a yes/no question post
+            # fix-11 with the scope description moved to a subtitle).
+            html.H5("Q5 · Are you an energy-related researcher or professional?"),
+            html.P(
+                "(works/studies in energy industry, utilities, energy "
+                "research, or energy policy)",
+                className="text-muted small",
+            ),
             dbc.RadioItems(
                 id="occupation",
                 options=_OCCUPATION_OPTIONS,
