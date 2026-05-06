@@ -172,10 +172,64 @@ def step1_layout(session_id: str | None = None):
                 html.Hr(),
                 html.Div(id="step1-error", className="text-danger mb-2"),
                 dbc.Button("Next → Generate my profile", id="btn-next-step1",
-                          color="primary", size="lg", className="mt-2"),
+                          color="primary", size="lg", className="mt-2",
+                          # Phase 3.X-fix-16: starts disabled; toggle_step1_next
+                          # callback enables when all required fields are filled
+                          # (matches the disable-toggle pattern used on Steps 3-8).
+                          disabled=True),
             ])
         ]),
     ])
+
+
+# ==================== Step 1 disable-toggle callback (fix-16) =========
+# Mirrors the disable-toggle pattern used on Steps 3-8 so Next visually
+# reflects whether the form is complete. Validation logic is identical
+# to submit_step1's `missing_required` — kept duplicated rather than
+# extracted into a helper because the toggle runs frequently (every
+# Input change) while submit runs once on click; locality of decision
+# beats DRY here. submit_step1 still re-validates on click as a fail-
+# safe against synthetic clicks.
+@dash_app.callback(
+    Output("btn-next-step1", "disabled"),
+    Input("ownership-type", "value"),
+    Input("area", "value"),
+    Input("people", "value"),
+    Input("occupation", "value"),
+    Input("url", "search"),
+)
+def toggle_step1_next(ownership_type, area, people, occupation, search):
+    """Enable Next only when every required field is filled.
+
+    Required: ownership_type, area, people. occupation is conditionally
+    required (only when sessions.vec_familiarity is in the top 2 of the
+    5-pt scale, i.e. the same gate that decides whether Q5 is even
+    visible). der_options is *not* required — a household may legitimately
+    have none of PV/BESS/EV.
+    """
+    from vec_platform.models import Session as SessionModel
+
+    session_id = _parse_session_id(search)
+    occupation_required = False
+    if session_id:
+        _db = SessionLocal()
+        try:
+            _sess = _db.query(SessionModel).filter(SessionModel.id == session_id).first()
+            occupation_required = (
+                _sess is not None
+                and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
+            )
+        finally:
+            _db.close()
+
+    missing_required = (
+        not ownership_type
+        or area is None
+        or people is None
+        or (occupation_required and not occupation)
+    )
+    # True → button stays disabled; False → enabled.
+    return missing_required
 
 
 # ==================== Step 1 submit callback ====================
