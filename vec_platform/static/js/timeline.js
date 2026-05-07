@@ -517,8 +517,18 @@
       // curve. /api/shadow-prices is GET-creates-if-missing, so calling
       // from Step 3 is safe even though Step 4 is normally where the
       // session-level row gets created.
+      // Phase D-2: prefer the user's customised profile (step=3 — the
+      // last "Next" snapshot of device positions) so refreshing /step3
+      // restores their drags. First-time visitors don't have a step=3
+      // row yet — fall back to the step=2 baseline. The server's
+      // step=3 response also pulls un-scaled rigid_load + fresh PV
+      // from current calibration, so the two paths produce
+      // structurally identical state for JS (only `devices` differs:
+      // user's drags vs. baseline default positions).
       [profile, shadow] = await Promise.all([
-        VECApi.getProfile(state.sessionId, 2),
+        VECApi.getProfile(state.sessionId, 3).catch((e) =>
+          VECApi.getProfile(state.sessionId, 2)
+        ),
         VECApi.getShadowPrices(state.sessionId),
       ]);
     } catch (err) {
@@ -540,9 +550,19 @@
     // back to internal_buy if a future API rev drops retail_price.
     state.spotPrices = (shadow && (shadow.retail_price || shadow.internal_buy)) || null;
 
-    // Seed positions: for every device present in the Step 2 profile, pick a
-    // start/duration. Prefer JS defaults (they match MockEngine), but fall
-    // back to extracting bounds from the raw array for any unknown device.
+    // Seed positions: for every device present in the loaded profile,
+    // pick a start/duration. Phase D-2 inverted the priority: bounds
+    // extracted from the array (the user's last drag persisted at
+    // step=3, or the engine's default at step=2) take precedence over
+    // catalog defaults. This lets a refresh restore "where the user
+    // left a device" instead of always snapping back to the
+    // hard-coded catalog start. The catalog default remains as a
+    // fallback for devices the engine didn't seed and arrays we
+    // can't extract bounds from.
+    //
+    // ``state.originalPositions`` always uses the catalog defaults so
+    // the Reset-to-defaults button has a stable target — restoring
+    // that snapshot is what reverts the user's drags.
     for (const [name, arr] of Object.entries(profile.devices)) {
       if (name === "base_load") continue;
       if (!Array.isArray(arr)) continue;
@@ -551,12 +571,19 @@
       const catalogMeta = DEVICE_CATALOG[stripInstanceSuffix(name)];
       if (!catalogMeta) continue;
       const bounds = VECCompute.extractBounds(arr);
-      const start = catalogMeta.default_start ?? (bounds ? bounds.start : 0);
-      const duration = catalogMeta.default_duration ?? (bounds ? bounds.duration : 4);
+      const start = bounds ? bounds.start : (catalogMeta.default_start ?? 0);
+      const duration = bounds ? bounds.duration : (catalogMeta.default_duration ?? 4);
       const load_kw = catalogMeta.load_kw ?? (bounds ? arr[bounds.start] : 1.0);
-      const pos = { start, duration, load_kw };
-      state.originalPositions[name] = { ...pos };
-      state.placed[name] = { ...pos };
+      // Reset target: catalog defaults (what the engine seeds at
+      // step=2). Live position: bounds-first (what the user last
+      // dragged to, or the catalog default on first visit).
+      const defaults = {
+        start: catalogMeta.default_start ?? start,
+        duration: catalogMeta.default_duration ?? duration,
+        load_kw,
+      };
+      state.originalPositions[name] = defaults;
+      state.placed[name] = { start, duration, load_kw };
     }
 
     // Original bill for delta comparison: compute from Step 2's net_load directly.
@@ -791,15 +818,71 @@
 
   // ---- Buttons ----
   function setupButtons() {
-    $("btn-reset").addEventListener("click", () => {
+    $("btn-reset").addEventListener("click", async () => {
+      // Phase D-2: full reset. Previously this only restored device
+      // positions; with calibration persistence (Phase B/C/D-1), the
+      // user expects "Reset to defaults" to also clear the PV/BESS/EV
+      // capacity inputs and the ±5% baseline scaler. The button
+      // semantics now match its label across all of /step3.
       state.placed = {};
       for (const [name, pos] of Object.entries(state.originalPositions)) {
         state.placed[name] = { ...pos };
       }
+
+      // Reset calibration in-memory state.
+      state.scaleFactor = 1.0;
+      state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
+
+      // Reset calibration UI: capacity inputs back to defaults +
+      // checkboxes ticked + inputs disabled.
+      Object.entries(_CAP_FIELDS).forEach(([t, meta]) => {
+        const inp = document.getElementById(`${t}-capacity-input`);
+        const chk = document.getElementById(`${t}-capacity-unknown`);
+        if (!inp || !chk) return;
+        inp.value = meta.default;
+        chk.checked = true;
+        inp.disabled = true;
+      });
+      // Reset scaling display.
+      const scalingDisplay = $("scaling-display");
+      if (scalingDisplay) scalingDisplay.textContent = "0%";
+
+      // Persist defaults to user_inputs (atomic 7-field reset).
+      // Cancel any pending debounced PUT first so it doesn't fire
+      // after this one and re-write stale values.
+      if (_calibrationTimer) {
+        clearTimeout(_calibrationTimer);
+        _calibrationTimer = null;
+      }
+      _calibrationPatchPending = {};
+      try {
+        const r = await fetch("/api/user_input/calibration", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: state.sessionId,
+            pv_kwp: _CAP_FIELDS.pv.default,
+            bess_kwh: _CAP_FIELDS.bess.default,
+            ev_kwh: null,
+            load_scale_factor: 1.0,
+            pv_calibrated: false,
+            bess_calibrated: false,
+            ev_calibrated: false,
+          }),
+        });
+        if (!r.ok) {
+          const detail = await r.text().catch(() => "");
+          console.warn("Reset calibration PUT failed:", r.status, detail);
+        }
+      } catch (e) {
+        console.warn("Reset calibration PUT error:", e);
+      }
+
+      // Refresh: fetch baseline (with reset PV curve) and re-render.
+      await refetchBaselineAndRefresh();
       renderTimeline();
       renderDeviceList();
       renderAddSelect();
-      refreshChartAndBill();
     });
 
     // Phase 3.7-pre: Add device dropdown wiring.

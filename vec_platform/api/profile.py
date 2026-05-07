@@ -139,12 +139,15 @@ def get_profile(
         load_scale_factor = 1.0
         pv_calibrated = bess_calibrated = ev_calibrated = False
 
-    # Phase D-1: when serving the customize page (step=2), recompute
-    # PV generation on the fly from the current user_inputs.pv_kwp
-    # instead of returning the frozen baseline snapshot. The Step-1
-    # baseline daily_profiles row stays untouched, but the JS state
-    # is primed with the calibration-aware curve so the live chart +
-    # bill match what the participant has dialed in.
+    # Phase D-1: recompute PV generation on the fly from the current
+    # user_inputs.pv_kwp instead of returning the frozen baseline
+    # snapshot. The Step-1 baseline daily_profiles row stays
+    # untouched, but the JS state is primed with the calibration-aware
+    # curve so the live chart + bill match what the participant has
+    # dialed in. Phase D-2: extend this to step=3 too — when
+    # timeline.js loads the user's saved customized profile (devices),
+    # it should still see fresh PV reflecting any post-Next
+    # calibration changes.
     #
     # Note: ``rigid_load`` is intentionally returned UN-scaled —
     # timeline.js applies ``load_scale_factor`` client-side on every
@@ -152,11 +155,30 @@ def get_profile(
     # initial load. Pre-scaling here would double-multiply.
     rigid_load_arr = json.loads(profile.rigid_load)
     pv_generation_arr = json.loads(profile.pv_generation)
-    if step == 2 and user_input is not None:
+    if user_input is not None:
         if has_pv:
             pv_generation_arr = calculation_engine._get_pv_generation(user_input)
         else:
             pv_generation_arr = [0.0] * SLOTS_PER_DAY
+        # Phase D-2: when serving step!=2 (e.g. step=3 for device
+        # restore), the matching daily_profiles row's ``rigid_load``
+        # is the *scaled* base load that recalculate wrote. JS
+        # consumes this field as the un-scaled baseline and applies
+        # ``load_scale_factor`` itself, so we must always return the
+        # un-scaled view. Pull it from the step=2 baseline (which
+        # step1.py wrote untouched).
+        if step != 2:
+            baseline = (
+                db.query(DailyProfile)
+                .filter(
+                    DailyProfile.session_id == session_id,
+                    DailyProfile.step == 2,
+                )
+                .order_by(DailyProfile.id.desc())
+                .first()
+            )
+            if baseline is not None:
+                rigid_load_arr = json.loads(baseline.rigid_load)
 
     return {
         "session_id": profile.session_id,
