@@ -78,28 +78,77 @@
           <div class="card-body" id="bill-card">
             <div class="text-muted">Loading…</div>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Phase 3.7-pre: ±10% baseline scale knob (5% steps). Scales only
-         the rigid base load. Moved here from the top of the page so the
-         participant first sees their schedule and bill, then optionally
-         adjusts. -->
-    <div class="card mb-3 baseline-adjust-card">
-      <div class="card-header"><strong>Adjust your baseline (optional)</strong></div>
-      <div class="card-body">
-        <p class="hint text-muted small mb-2">
-          Use these buttons to scale your overall base electricity use up
-          or down by ±10%, in 5% steps.
-        </p>
-        <div class="scale-controls">
-          <button id="scale-decrement" class="scale-btn" type="button">−</button>
-          <span id="scale-display" class="scale-value">0%</span>
-          <button id="scale-increment" class="scale-btn" type="button">+</button>
+          <!-- Phase B: calibration panel — user adjusts base-load
+               scaling and DER capacity to match their real situation.
+               Visual-only in Phase B; backend wiring deferred to
+               Phase D. The ±5% scaling controls were moved here from
+               a separate "Adjust your baseline" card below the My
+               devices block (Phase 3.7-pre layout). -->
+          <div class="card-body border-top calibration-panel" id="calibration-panel">
+            <h4 class="calibration-title">Match your real bill</h4>
+
+            <!-- ±5% scaling, no upper/lower bound -->
+            <div class="calibration-section">
+              <div class="calibration-label">Higher or lower than your actual bill?</div>
+              <div class="scaling-controls">
+                <button id="btn-scale-down" class="scale-btn" type="button"
+                        title="Decrease base load by 5%">− 5%</button>
+                <span id="scaling-display" class="scaling-display">0%</span>
+                <button id="btn-scale-up" class="scale-btn" type="button"
+                        title="Increase base load by 5%">+ 5%</button>
+              </div>
+              <div class="calibration-hint">
+                Adjust until the bill matches your typical month.
+              </div>
+            </div>
+
+            <!-- DER capacity inputs (each row conditional on Step 1
+                 selections; rows start hidden and JS un-hides). -->
+            <div class="calibration-section" id="der-capacity-section">
+              <div class="calibration-label">My system size</div>
+
+              <div class="capacity-row" id="pv-capacity-row" style="display: none;">
+                <label class="capacity-label" for="pv-capacity-input">PV (solar)</label>
+                <input type="number" class="capacity-input" id="pv-capacity-input"
+                       value="5" step="0.5" min="0" disabled>
+                <span class="capacity-unit">kW</span>
+                <label class="capacity-unknown">
+                  <input type="checkbox" id="pv-capacity-unknown" checked>
+                  I don't know
+                </label>
+              </div>
+
+              <div class="capacity-row" id="bess-capacity-row" style="display: none;">
+                <label class="capacity-label" for="bess-capacity-input">Battery</label>
+                <input type="number" class="capacity-input" id="bess-capacity-input"
+                       value="10" step="1" min="0" disabled>
+                <span class="capacity-unit">kWh</span>
+                <label class="capacity-unknown">
+                  <input type="checkbox" id="bess-capacity-unknown" checked>
+                  I don't know
+                </label>
+              </div>
+
+              <div class="capacity-row" id="ev-capacity-row" style="display: none;">
+                <label class="capacity-label" for="ev-capacity-input">EV battery</label>
+                <input type="number" class="capacity-input" id="ev-capacity-input"
+                       value="60" step="5" min="0" disabled>
+                <span class="capacity-unit">kWh</span>
+                <label class="capacity-unknown">
+                  <input type="checkbox" id="ev-capacity-unknown" checked>
+                  I don't know
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+    <!-- Phase B: removed the standalone "Adjust your baseline" card —
+         scaling controls now live inside the bill card's calibration
+         panel above. -->
+
 
     <!-- v3.4: second prior-expectation guess + confidence Likert moved
          here from Step 2. The participant has now seen their profile,

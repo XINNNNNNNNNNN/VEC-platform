@@ -19,6 +19,10 @@
     // Phase 3.X-fix-18: drives the BESS placeholder track. Display-only;
     // auto-managed charge/discharge simulation is deferred.
     hasBess: false,
+    // Phase B: drive conditional rendering of the calibration panel's
+    // capacity rows (PV / BESS / EV). All fetched from /api/profile.
+    hasPv: false,
+    hasEv: false,
     // Phase 3.X-fix-19: SE3 summer retail-price array (96 slots). Used
     // to compute the BESS placeholder charge/discharge windows. Fetched
     // alongside the profile.
@@ -529,6 +533,9 @@
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
     state.hasBess = !!profile.has_bess;
+    // Phase B: drive the calibration panel's PV / EV capacity rows.
+    state.hasPv = !!profile.has_pv;
+    state.hasEv = !!profile.has_ev;
     // Phase 3.X-fix-19: retail price drives the BESS schedule. Fall
     // back to internal_buy if a future API rev drops retail_price.
     state.spotPrices = (shadow && (shadow.retail_price || shadow.internal_buy)) || null;
@@ -559,37 +566,75 @@
     renderDeviceList();
     renderAddSelect();
     refreshChartAndBill();
+    // Phase B: wire calibration panel after profile is loaded so the
+    // PV/BESS/EV row visibility reflects state.has* flags.
+    setupCalibrationPanel();
   }
 
-  // ---- v3.4: baseline scale (±10%) ----
+  // ---- v3.4 / Phase B: baseline scale ----
+  // Phase B moved the ±5% scaling controls into the bill-card
+  // calibration panel and dropped the [-10%, +10%] clamp (users can
+  // adjust arbitrarily far). The scale state itself still lives on
+  // `state.scaleFactor` because /api/recalculate accepts it as a
+  // ready-made multiplier; only the UI wiring changed.
   function applyScale(arr, factor) {
     return arr.map((v) => v * factor);
   }
 
-  function updateScaleDisplay() {
-    const pct = Math.round((state.scaleFactor - 1.0) * 100);
-    const sign = pct > 0 ? "+" : "";
-    $("scale-display").textContent = `${sign}${pct}%`;
-    // Disable buttons at the bounds.
-    $("scale-decrement").disabled = state.scaleFactor <= 0.9001;  // float fudge
-    $("scale-increment").disabled = state.scaleFactor >= 1.0999;
-  }
+  function setupCalibrationPanel() {
+    // Phase B: visual-only calibration. Scaling buttons drive
+    // state.scaleFactor (still consumed by /api/recalculate exactly
+    // as before); capacity inputs are display-only — Phase D will
+    // wire them through to the bill calculation.
+    const upBtn   = $("btn-scale-up");
+    const downBtn = $("btn-scale-down");
+    const display = $("scaling-display");
+    if (upBtn && downBtn && display) {
+      const updateDisplay = () => {
+        const pct = Math.round((state.scaleFactor - 1.0) * 100);
+        const sign = pct > 0 ? "+" : "";
+        display.textContent = `${sign}${pct}%`;
+      };
+      const adjust = (deltaPct) => {
+        // Step in 5% increments; multiplicative bound prevents the
+        // load array going non-positive on extreme negative scaling.
+        const stepFactor = deltaPct / 100;
+        const next = +(state.scaleFactor + stepFactor).toFixed(2);
+        if (next < 0.05) return;  // floor; below this base load → 0
+        state.scaleFactor = next;
+        state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
+        updateDisplay();
+        refreshChartAndBill();
+      };
+      upBtn.addEventListener("click", () => adjust(+5));
+      downBtn.addEventListener("click", () => adjust(-5));
+      updateDisplay();
+    }
 
-  function setScaleFactor(newFactor) {
-    state.scaleFactor = +newFactor.toFixed(2);
-    state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
-    updateScaleDisplay();
-    refreshChartAndBill();
-  }
-
-  function setupScaleControls() {
-    $("scale-decrement").addEventListener("click", () => {
-      setScaleFactor(Math.max(0.9, state.scaleFactor - 0.05));
+    // Capacity rows: un-hide for DERs the participant selected on
+    // Step 1, wire the "I don't know" toggle to disable/reset the
+    // matching input. Phase B doesn't propagate the values anywhere
+    // — Phase D will read them when /api/recalculate is parameterised.
+    const capDefaults = { pv: 5, bess: 10, ev: 60 };
+    const capPresent = {
+      pv:   !!state.hasPv,
+      bess: !!state.hasBess,
+      ev:   !!state.hasEv,
+    };
+    Object.entries(capPresent).forEach(([t, present]) => {
+      const row = document.getElementById(`${t}-capacity-row`);
+      if (row) row.style.display = present ? "" : "none";
     });
-    $("scale-increment").addEventListener("click", () => {
-      setScaleFactor(Math.min(1.1, state.scaleFactor + 0.05));
+    Object.keys(capDefaults).forEach((t) => {
+      const inp = document.getElementById(`${t}-capacity-input`);
+      const chk = document.getElementById(`${t}-capacity-unknown`);
+      if (!inp || !chk) return;
+      inp.disabled = chk.checked;
+      chk.addEventListener("change", () => {
+        inp.disabled = chk.checked;
+        if (chk.checked) inp.value = capDefaults[t];
+      });
     });
-    updateScaleDisplay();
   }
 
   // ---- v3.4: end-of-Step-3 questions (second prior expectation + confidence) ----
@@ -755,7 +800,6 @@
   // ---- Bootstrap ----
   document.addEventListener("DOMContentLoaded", () => {
     renderProgressBar();
-    setupScaleControls();
     setupQuestionControls();
     setupButtons();
     loadInitial();

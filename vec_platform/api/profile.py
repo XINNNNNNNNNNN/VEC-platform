@@ -108,13 +108,20 @@ def get_profile(
 
     # Phase 3.X-fix-18: surface has_bess so Step 3 can render the BESS
     # placeholder track (display-only; auto-managed simulation deferred).
+    # Phase B: also surface has_pv / has_ev so the calibration panel
+    # can conditionally render the matching capacity-input rows.
     user_input = (
         db.query(UserInput)
         .filter(UserInput.session_id == session_id)
         .order_by(UserInput.id.desc())
         .first()
     )
-    has_bess = bool(user_input.has_bess) if user_input is not None else False
+    if user_input is not None:
+        has_pv = bool(user_input.has_pv)
+        has_bess = bool(user_input.has_bess)
+        has_ev = bool(user_input.has_ev)
+    else:
+        has_pv = has_bess = has_ev = False
 
     return {
         "session_id": profile.session_id,
@@ -124,7 +131,9 @@ def get_profile(
         "pv_generation": json.loads(profile.pv_generation),
         "net_load": json.loads(profile.net_load),
         "devices": json.loads(profile.devices),
+        "has_pv": has_pv,
         "has_bess": has_bess,
+        "has_ev": has_ev,
     }
 
 
