@@ -90,9 +90,38 @@ class UserInput(Base):
     people: Mapped[int] = mapped_column(Integer)
     has_ev: Mapped[bool] = mapped_column(Boolean, default=False)
     has_pv: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase C reuses pv_kwp / bess_kwh as the canonical user-edited
+    # capacity values (rather than adding pv_kw / bess_kwh_v2). pv_kwp
+    # is already load-bearing — engine/mock.py reads it as the PV
+    # peak — so user calibrations propagate to the bill via the
+    # existing recalculate path.
     pv_kwp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     has_bess: Mapped[bool] = mapped_column(Boolean, default=False)
     bess_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Phase C: EV battery capacity (kWh). NULL = "I don't know" / not
+    # yet calibrated; UI defaults to 60 kWh when displaying.
+    ev_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Phase C: persisted ±5% baseline scaling. Defaults to 1.0 (no
+    # scaling). The fix-18 recalculate path still reads scale_factor
+    # off the JS `state.scaleFactor` directly; Phase D will swap to
+    # this column as source of truth.
+    load_scale_factor: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, server_default="1.0",
+    )
+    # Phase C: research-signal flags. True when the participant
+    # actively confirmed the matching capacity (unchecked
+    # "I don't know"); False (default) when they accepted the
+    # platform default. Pilot analysis can split users by whether
+    # they internalised their own situation vs. defaulted.
+    pv_calibrated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", default=False,
+    )
+    bess_calibrated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", default=False,
+    )
+    ev_calibrated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", default=False,
+    )
 
     # ----- v3.0 fields -----
     # Replace v2 `building_type` (5-choice) and `heating` with these two.

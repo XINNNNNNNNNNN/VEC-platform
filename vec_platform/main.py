@@ -213,6 +213,9 @@ async def step5_page(session_id: str | None = None):
 
 # API routes
 from vec_platform.api import session, profile, bill, shadow_price, device_shift, survey
+# Phase C: calibration persistence — Step 3's capacity inputs and
+# baseline scaler PUT to /api/user_input/calibration.
+from vec_platform.api import calibration
 
 fastapi_app.include_router(session.router, prefix="/api", tags=["session"])
 fastapi_app.include_router(profile.router, prefix="/api", tags=["profile"])
@@ -220,6 +223,7 @@ fastapi_app.include_router(bill.router, prefix="/api", tags=["bill"])
 fastapi_app.include_router(shadow_price.router, prefix="/api", tags=["shadow_price"])
 fastapi_app.include_router(device_shift.router, prefix="/api", tags=["device_shift"])
 fastapi_app.include_router(survey.router, prefix="/api", tags=["survey"])
+fastapi_app.include_router(calibration.router, prefix="/api", tags=["calibration"])
 
 
 # Mount Dash as WSGI middleware under /dash/

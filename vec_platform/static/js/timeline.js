@@ -566,9 +566,10 @@
     renderDeviceList();
     renderAddSelect();
     refreshChartAndBill();
-    // Phase B: wire calibration panel after profile is loaded so the
-    // PV/BESS/EV row visibility reflects state.has* flags.
-    setupCalibrationPanel();
+    // Phase B / C: wire calibration panel after profile is loaded so
+    // the PV/BESS/EV row visibility reflects state.has* and Phase C
+    // can restore persisted capacity values + calibrated flags.
+    setupCalibrationPanel(profile);
   }
 
   // ---- v3.4 / Phase B: baseline scale ----
@@ -581,11 +582,30 @@
     return arr.map((v) => v * factor);
   }
 
-  function setupCalibrationPanel() {
-    // Phase B: visual-only calibration. Scaling buttons drive
-    // state.scaleFactor (still consumed by /api/recalculate exactly
-    // as before); capacity inputs are display-only — Phase D will
-    // wire them through to the bill calculation.
+  // Phase C: capacity-input column metadata. The schema column for
+  // each DER carries the historical "kWp" / "kWh" suffix; the JS DOM
+  // ids are the cleaner "pv" / "bess" / "ev" prefixes.
+  const _CAP_FIELDS = {
+    pv:   { col: "pv_kwp",  default: 5  },
+    bess: { col: "bess_kwh", default: 10 },
+    ev:   { col: "ev_kwh",  default: 60 },
+  };
+
+  function setupCalibrationPanel(profile) {
+    // Phase B + C: scaling buttons drive state.scaleFactor (still
+    // consumed by /api/recalculate exactly as before); capacity
+    // inputs are still visual-only on the bill in Phase C, but every
+    // change is now persisted to user_inputs via PUT
+    // /api/user_input/calibration. Phase D will switch the engine to
+    // read calibration values from those columns.
+
+    // ---- Phase C: restore state from profile ----
+    if (profile && typeof profile.load_scale_factor === "number") {
+      state.scaleFactor = +profile.load_scale_factor.toFixed(2);
+      state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
+    }
+
+    // ---- Scaling controls ----
     const upBtn   = $("btn-scale-up");
     const downBtn = $("btn-scale-down");
     const display = $("scaling-display");
@@ -605,17 +625,19 @@
         state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
         updateDisplay();
         refreshChartAndBill();
+        // Phase C: persist baseline scale.
+        scheduleCalibrationPersist({ load_scale_factor: state.scaleFactor });
       };
       upBtn.addEventListener("click", () => adjust(+5));
       downBtn.addEventListener("click", () => adjust(-5));
       updateDisplay();
     }
 
-    // Capacity rows: un-hide for DERs the participant selected on
-    // Step 1, wire the "I don't know" toggle to disable/reset the
-    // matching input. Phase B doesn't propagate the values anywhere
-    // — Phase D will read them when /api/recalculate is parameterised.
-    const capDefaults = { pv: 5, bess: 10, ev: 60 };
+    // ---- Capacity rows ----
+    // Un-hide rows for DERs the participant selected on Step 1, then
+    // restore each row's value + "I don't know" state from the
+    // profile. Defaults from _CAP_FIELDS apply when the column is
+    // NULL (fresh sessions before any calibration PUT).
     const capPresent = {
       pv:   !!state.hasPv,
       bess: !!state.hasBess,
@@ -625,16 +647,124 @@
       const row = document.getElementById(`${t}-capacity-row`);
       if (row) row.style.display = present ? "" : "none";
     });
-    Object.keys(capDefaults).forEach((t) => {
+
+    Object.keys(_CAP_FIELDS).forEach((t) => {
       const inp = document.getElementById(`${t}-capacity-input`);
       const chk = document.getElementById(`${t}-capacity-unknown`);
       if (!inp || !chk) return;
+
+      // ---- Phase C restore ----
+      const meta = _CAP_FIELDS[t];
+      const calibrated = profile && profile[`${t}_calibrated`];
+      const persistedValue = profile ? profile[meta.col] : null;
+      // If the column is non-NULL (step1 default-writes pv_kwp=5 and
+      // bess_kwh=10) prefer that value; otherwise fall back to the
+      // capDefault.
+      inp.value = persistedValue != null ? persistedValue : meta.default;
+      chk.checked = !calibrated;
       inp.disabled = chk.checked;
+
       chk.addEventListener("change", () => {
-        inp.disabled = chk.checked;
-        if (chk.checked) inp.value = capDefaults[t];
+        const known = !chk.checked;
+        inp.disabled = !known;
+        if (!known) {
+          // Reset to default. The PUT below carries the default value
+          // *and* sets *_calibrated=False so analyses can split
+          // "user reset to default" from "user picked default".
+          inp.value = meta.default;
+        }
+        scheduleCalibrationPersist(buildCapacityPatch(t));
+      });
+      inp.addEventListener("change", () => {
+        // Only persist edits when the user has confirmed (input
+        // enabled). Disabled inputs can't be edited via UI but defend
+        // against synthetic events.
+        if (!inp.disabled) {
+          scheduleCalibrationPersist(buildCapacityPatch(t));
+        }
       });
     });
+  }
+
+  // Phase D-1: after a calibration write lands, pull the updated
+  // baseline arrays back from /api/profile (which now re-derives PV
+  // from user_inputs.pv_kwp) and refresh the live chart + bill so
+  // the participant sees the effect of changing PV capacity right
+  // away. Today only PV affects state.pvGeneration; BESS / EV
+  // capacities will be wired in D-2 / D-3 and would extend this
+  // function then.
+  async function refetchBaselineAndRefresh() {
+    if (!state.sessionId) return;
+    let profile;
+    try {
+      profile = await VECApi.getProfile(state.sessionId, 2);
+    } catch (err) {
+      console.warn("Calibration refetch failed:", err);
+      return;
+    }
+    state.rawBaseLoad = profile.rigid_load;
+    state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
+    state.pvGeneration = profile.pv_generation;
+    refreshChartAndBill();
+  }
+
+  // ---- Phase C: calibration persistence ----
+  // Debounced PUT so a flurry of ±5% clicks or a fast keyboard edit
+  // coalesces into one round-trip. 300 ms is comfortably below the
+  // perceptual threshold for "did my change save?" feedback.
+  let _calibrationPatchPending = {};
+  let _calibrationTimer = null;
+
+  function buildCapacityPatch(prefix) {
+    const meta = _CAP_FIELDS[prefix];
+    const inp = document.getElementById(`${prefix}-capacity-input`);
+    const chk = document.getElementById(`${prefix}-capacity-unknown`);
+    const known = !chk.checked;
+    const raw = Number(inp.value);
+    const value = Number.isFinite(raw) && raw > 0 ? raw : meta.default;
+    return {
+      [meta.col]: value,
+      [`${prefix}_calibrated`]: known,
+    };
+  }
+
+  function scheduleCalibrationPersist(patch) {
+    Object.assign(_calibrationPatchPending, patch);
+    if (_calibrationTimer) clearTimeout(_calibrationTimer);
+    _calibrationTimer = setTimeout(persistCalibration, 300);
+  }
+
+  async function persistCalibration() {
+    if (!state.sessionId) return;
+    const patch = _calibrationPatchPending;
+    _calibrationPatchPending = {};
+    _calibrationTimer = null;
+    if (Object.keys(patch).length === 0) return;
+    const body = { session_id: state.sessionId, ...patch };
+    let ok = false;
+    try {
+      const r = await fetch("/api/user_input/calibration", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      ok = r.ok;
+      if (!r.ok) {
+        const detail = await r.text().catch(() => "");
+        console.warn("Calibration persist failed:", r.status, detail);
+      }
+    } catch (e) {
+      console.warn("Calibration persist error:", e);
+    }
+    // Phase D-1: after the PUT lands, refresh the baseline so the
+    // chart + bill reflect the new PV / scaling. The fix-18 ±5%
+    // path already mutates state.scaleFactor + state.baseLoad in
+    // memory and calls refreshChartAndBill *before* the PUT, so
+    // for scaling alone this is a no-op redraw. For capacity
+    // changes, it's the only path to a fresh PV curve.
+    if (ok) {
+      await refetchBaselineAndRefresh();
+    }
   }
 
   // ---- v3.4: end-of-Step-3 questions (second prior expectation + confidence) ----
@@ -752,10 +882,11 @@
         }
         await Promise.all(shifts);
 
-        // Persist the step=3 profile + bills server-side. scale_factor
-        // is sent so the backend can stash it in daily_profiles.devices
-        // (under the __scale_factor__ key) and apply the same scaling
-        // to the rigid base load.
+        // Persist the step=3 profile + bills server-side. Phase D-1:
+        // scale_factor is no longer authoritative on the request —
+        // the server reads user_inputs.load_scale_factor (kept in
+        // sync by the calibration PUT path) — but the field is sent
+        // anyway for backward compat with the recalculate schema.
         await VECApi.recalculate({
           session_id: state.sessionId,
           step: STEP,

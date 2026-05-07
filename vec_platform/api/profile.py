@@ -110,6 +110,8 @@ def get_profile(
     # placeholder track (display-only; auto-managed simulation deferred).
     # Phase B: also surface has_pv / has_ev so the calibration panel
     # can conditionally render the matching capacity-input rows.
+    # Phase C: surface the persisted calibration values + calibrated
+    # flags so the panel can restore UI state on reload.
     user_input = (
         db.query(UserInput)
         .filter(UserInput.session_id == session_id)
@@ -120,20 +122,61 @@ def get_profile(
         has_pv = bool(user_input.has_pv)
         has_bess = bool(user_input.has_bess)
         has_ev = bool(user_input.has_ev)
+        pv_kwp = user_input.pv_kwp
+        bess_kwh = user_input.bess_kwh
+        ev_kwh = user_input.ev_kwh
+        load_scale_factor = (
+            user_input.load_scale_factor
+            if user_input.load_scale_factor is not None
+            else 1.0
+        )
+        pv_calibrated = bool(user_input.pv_calibrated)
+        bess_calibrated = bool(user_input.bess_calibrated)
+        ev_calibrated = bool(user_input.ev_calibrated)
     else:
         has_pv = has_bess = has_ev = False
+        pv_kwp = bess_kwh = ev_kwh = None
+        load_scale_factor = 1.0
+        pv_calibrated = bess_calibrated = ev_calibrated = False
+
+    # Phase D-1: when serving the customize page (step=2), recompute
+    # PV generation on the fly from the current user_inputs.pv_kwp
+    # instead of returning the frozen baseline snapshot. The Step-1
+    # baseline daily_profiles row stays untouched, but the JS state
+    # is primed with the calibration-aware curve so the live chart +
+    # bill match what the participant has dialed in.
+    #
+    # Note: ``rigid_load`` is intentionally returned UN-scaled —
+    # timeline.js applies ``load_scale_factor`` client-side on every
+    # ±5% click, and prime that scale via ``state.scaleFactor`` on
+    # initial load. Pre-scaling here would double-multiply.
+    rigid_load_arr = json.loads(profile.rigid_load)
+    pv_generation_arr = json.loads(profile.pv_generation)
+    if step == 2 and user_input is not None:
+        if has_pv:
+            pv_generation_arr = calculation_engine._get_pv_generation(user_input)
+        else:
+            pv_generation_arr = [0.0] * SLOTS_PER_DAY
 
     return {
         "session_id": profile.session_id,
         "step": profile.step,
-        "rigid_load": json.loads(profile.rigid_load),
+        "rigid_load": rigid_load_arr,
         "flexible_load": json.loads(profile.flexible_load),
-        "pv_generation": json.loads(profile.pv_generation),
+        "pv_generation": pv_generation_arr,
         "net_load": json.loads(profile.net_load),
         "devices": json.loads(profile.devices),
         "has_pv": has_pv,
         "has_bess": has_bess,
         "has_ev": has_ev,
+        # Phase C: calibration state for UI restore.
+        "pv_kwp": pv_kwp,
+        "bess_kwh": bess_kwh,
+        "ev_kwh": ev_kwh,
+        "load_scale_factor": load_scale_factor,
+        "pv_calibrated": pv_calibrated,
+        "bess_calibrated": bess_calibrated,
+        "ev_calibrated": ev_calibrated,
     }
 
 
@@ -149,10 +192,11 @@ class RecalculateRequest(BaseModel):
     step: int = 3
     scenario: str = "no_vec"
     device_positions: list[DevicePosition]
-    # v3.4: Step 3 baseline ±10% adjuster, in 5% steps. The frontend has
-    # already applied this scale to the base load it shows the user; we
-    # store the factor as metadata so downstream pages can recover the
-    # un-scaled view if needed.
+    # v3.4: Step 3 baseline ±10% adjuster, in 5% steps. Phase D-1
+    # demoted this field from authoritative to ignored — the recalc
+    # path now reads ``user_inputs.load_scale_factor`` instead. The
+    # field is retained on the request schema for backward compat
+    # so older clients (or any cached JS) don't 422 on submit.
     scale_factor: float = 1.0
 
 
@@ -163,10 +207,19 @@ def recalculate(
 ):
     """Rebuild the profile from new device positions and compute a fresh bill.
 
-    Uses the base_load and PV generation from the Step 2 baseline profile,
-    overlays the submitted device positions to produce a new per-device
-    breakdown, persists it at `step=data.step`, and returns chart-ready data
-    plus a bill for `data.scenario`.
+    Uses the base_load from the Step 2 baseline profile, recomputes PV
+    generation from current user_inputs.pv_kwp, applies the persisted
+    load_scale_factor, overlays the submitted device positions to
+    produce a new per-device breakdown, persists at ``step=data.step``,
+    and returns chart-ready data plus a bill for ``data.scenario``.
+
+    Phase D-1 changes:
+    * PV curve is regenerated from ``user_inputs.pv_kwp`` instead of
+      reusing the frozen baseline snapshot — Phase C calibration of
+      PV capacity now reaches the bill.
+    * ``load_scale_factor`` is read from ``user_inputs`` rather than
+      the JS payload. The payload's ``scale_factor`` field is retained
+      for backward compat (older clients won't 422) but ignored.
     """
     baseline = (
         db.query(DailyProfile)
@@ -178,12 +231,32 @@ def recalculate(
         raise HTTPException(status_code=404, detail="Baseline profile not found")
 
     raw_base_load = json.loads(baseline.rigid_load)
-    pv_generation = json.loads(baseline.pv_generation)
 
-    # Apply Step 3's baseline scale to the rigid load (and ONLY the rigid
-    # load — PV generation and shiftable devices stay at their nominal
-    # values, since the ±10% knob represents passive-load uncertainty).
-    scale = float(data.scale_factor)
+    # Phase D-1: read calibration from user_inputs as the source of truth.
+    user_input = (
+        db.query(UserInput)
+        .filter(UserInput.session_id == data.session_id)
+        .order_by(UserInput.id.desc())
+        .first()
+    )
+    if user_input is not None:
+        scale = float(
+            user_input.load_scale_factor
+            if user_input.load_scale_factor is not None
+            else 1.0
+        )
+        if user_input.has_pv:
+            pv_generation = calculation_engine._get_pv_generation(user_input)
+        else:
+            pv_generation = [0.0] * SLOTS_PER_DAY
+    else:
+        # No user_input row (defensive — shouldn't happen post-Step-1).
+        # Fall back to the frozen baseline's PV curve and identity scale.
+        scale = 1.0
+        pv_generation = json.loads(baseline.pv_generation)
+
+    # Apply baseline scale to the rigid load only — PV generation and
+    # shiftable device loads stay nominal.
     base_load = [v * scale for v in raw_base_load]
 
     devices: dict[str, list[float]] = {"base_load": base_load}
