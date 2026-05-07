@@ -97,15 +97,8 @@
     labelSpan.className = "device-block-label";
     block.appendChild(labelSpan);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "remove-btn";
-    removeBtn.type = "button";
-    removeBtn.textContent = "×";
-    removeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      removeDevice(name);
-    });
-    block.appendChild(removeBtn);
+    // Phase 3.X-fix-17: timeline block × removed; users use the × in the
+    // My devices list (above the timeline). Single delete entry point.
 
     updateBlockLabel(block, name);
 

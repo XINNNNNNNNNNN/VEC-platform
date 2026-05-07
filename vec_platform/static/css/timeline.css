@@ -88,40 +88,19 @@
 
 .device-block-label {
   display: inline-block;
-  max-width: calc(100% - 26px);  /* leave room for the × button */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
 }
 
-.device-block .remove-btn {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(255, 255, 255, 0.35);
-  border: none;
-  color: #fff;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  line-height: 14px;
-  font-size: 14px;
-  padding: 0;
-  cursor: pointer;
-}
-
-.device-block .remove-btn:hover {
-  background: rgba(0, 0, 0, 0.3);
-}
+/* Phase 3.X-fix-17: removed .device-block .remove-btn rules
+   (timeline block × was non-functional; users delete via the
+   × in the My devices list above the timeline). */
 
 .device-block.non-draggable {
   cursor: default;
   background: var(--rigid-border);
-}
-
-.device-block.non-draggable .remove-btn {
-  display: none;
 }
 
 .hint {
