@@ -3,9 +3,19 @@
 //
 // Global: VECCompute
 const VECCompute = (() => {
-  function clampStart(start, duration) {
-    return Math.max(0, Math.min(SLOTS_PER_DAY - duration, start));
+  // Phase 3.X-fix-18: timeline interpreted as a single 24h cycle, so a
+  // device dragged past midnight wraps to the start of the day rather
+  // than clamping at the right edge. start is normalised to [0, 96).
+  function wrapStart(start, _duration) {
+    let s = start % SLOTS_PER_DAY;
+    if (s < 0) s += SLOTS_PER_DAY;
+    return s;
   }
+
+  // Back-compat alias. Pre-fix-18 callers used clampStart for the same
+  // role; now it wraps. Kept as alias so existing call sites stay valid
+  // even if not yet updated.
+  const clampStart = wrapStart;
 
   // Detect the start/duration of the single non-zero run inside a 96-slot
   // array. Returns null if the array is all-zero.
@@ -23,12 +33,18 @@ const VECCompute = (() => {
 
   // `placed` is { name: { start, duration, load_kw } }.
   // Returns { name: [96 floats] }.
+  // Phase 3.X-fix-18: wrap-aware. A device with start=90, duration=20
+  // fills slots 90..95 + 0..13 (wraps midnight), so the live bill
+  // matches what the user sees on the wrapped timeline.
   function buildDeviceArrays(placed) {
     const out = {};
     for (const [name, pos] of Object.entries(placed)) {
       const arr = new Array(SLOTS_PER_DAY).fill(0);
-      const end = Math.min(SLOTS_PER_DAY, pos.start + pos.duration);
-      for (let i = pos.start; i < end; i++) arr[i] = pos.load_kw;
+      const start = ((pos.start % SLOTS_PER_DAY) + SLOTS_PER_DAY) % SLOTS_PER_DAY;
+      const duration = Math.max(0, Math.min(SLOTS_PER_DAY, pos.duration));
+      for (let i = 0; i < duration; i++) {
+        arr[(start + i) % SLOTS_PER_DAY] = pos.load_kw;
+      }
       out[name] = arr;
     }
     return out;
@@ -113,6 +129,7 @@ const VECCompute = (() => {
 
   return {
     clampStart,
+    wrapStart,
     extractBounds,
     buildDeviceArrays,
     computeNetLoad,

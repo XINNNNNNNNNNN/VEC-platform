@@ -16,6 +16,9 @@
     // v3.4 baseline ±10% adjuster, in 5% steps. Affects only base load,
     // not PV generation or shiftable devices.
     scaleFactor: 1.0,
+    // Phase 3.X-fix-18: drives the BESS placeholder track. Display-only;
+    // auto-managed charge/discharge simulation is deferred.
+    hasBess: false,
   };
 
   // ---- DOM helpers ----
@@ -56,6 +59,20 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
+    // Phase 3.X-fix-18: BESS placeholder track. Rendered only when the
+    // session's user_inputs.has_bess is true. Display-only — no drag,
+    // no charge/discharge simulation. Auto-managed dispatch will be
+    // added in a later refactor phase.
+    if (state.hasBess) {
+      const bessRow = document.createElement("div");
+      bessRow.className = "timeline-row bess-track";
+      const bessLabel = document.createElement("div");
+      bessLabel.className = "timeline-row-label";
+      bessLabel.textContent = "Battery storage (auto-managed)";
+      bessRow.appendChild(bessLabel);
+      container.appendChild(bessRow);
+    }
+
     // One row per placed device instance, in a stable order so the
     // visual doesn't jump. Order is base-type order × instance number.
     // v3.X-fix-5b: expand each base to up to MAX_INSTANCES_PER_BASE
@@ -75,23 +92,48 @@
         rowLabel.textContent = getDeviceLabel(name, state.placed);
         row.appendChild(rowLabel);
 
-        const block = makeBlock(name);
-        row.appendChild(block);
+        // Phase 3.X-fix-18: makeBlock returns one segment for normal
+        // devices, two for those whose configured run wraps midnight.
+        for (const block of makeBlock(name)) {
+          row.appendChild(block);
+        }
 
         container.appendChild(row);
       }
     }
   }
 
+  // Phase 3.X-fix-18: returns [tail, head] (two divs) when the device's
+  // configured run crosses midnight, otherwise [singleBlock]. Both
+  // segments share the same `name` and (for draggable devices) the same
+  // drag handler keyed on `name`, so dragging either segment moves the
+  // device as a single logical unit.
   function makeBlock(name) {
     const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
+    const start = pos.start;
+    const duration = pos.duration;
+    const wraps = (start + duration) > SLOTS_PER_DAY;
+
+    if (!wraps) {
+      return [_makeSegment(name, meta, start, duration, /*segRole=*/null)];
+    }
+    const tailDur = SLOTS_PER_DAY - start;
+    const headDur = duration - tailDur;
+    return [
+      _makeSegment(name, meta, start, tailDur, "tail"),
+      _makeSegment(name, meta, 0, headDur, "head"),
+    ];
+  }
+
+  function _makeSegment(name, meta, segStart, segDuration, segRole) {
     const block = document.createElement("div");
     block.className = "device-block";
+    if (segRole) block.classList.add(`device-block-${segRole}`);
     block.dataset.device = name;
     block.style.background = meta.color;
-    block.style.left = `${(pos.start / SLOTS_PER_DAY) * 100}%`;
-    block.style.width = `${(pos.duration / SLOTS_PER_DAY) * 100}%`;
+    block.style.left = `${(segStart / SLOTS_PER_DAY) * 100}%`;
+    block.style.width = `${(segDuration / SLOTS_PER_DAY) * 100}%`;
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "device-block-label";
@@ -141,8 +183,9 @@
       if (!block.classList.contains("dragging")) return;
       const dx = e.clientX - startX;
       const dSlots = Math.round((dx / rowWidth) * SLOTS_PER_DAY);
-      const duration = state.placed[name].duration;
-      const newStart = VECCompute.clampStart(startSlotAtPointerDown + dSlots, duration);
+      // Phase 3.X-fix-18: wrap (modulo) instead of clamp so dragging a
+      // device past midnight lands it on the other side of the day.
+      const newStart = VECCompute.wrapStart(startSlotAtPointerDown + dSlots);
       if (newStart !== state.placed[name].start) {
         state.placed[name].start = newStart;
         block.style.left = `${(state.placed[name].start / SLOTS_PER_DAY) * 100}%`;
@@ -169,6 +212,10 @@
           action: "move",
         }).catch((err) => console.warn("drag-log failed", err));
       }
+      // Phase 3.X-fix-18: re-render so a wrapped device is shown as
+      // two cleanly aligned segments (tail at right, head at left)
+      // rather than a single block clipped at the right edge.
+      renderTimeline();
     }
 
     block.addEventListener("pointerup", endDrag);
@@ -470,6 +517,9 @@
     state.rawBaseLoad = profile.rigid_load;
     state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
     state.pvGeneration = profile.pv_generation;
+    // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
+    // false if the backend response predates the fix-18 schema bump.
+    state.hasBess = !!profile.has_bess;
 
     // Seed positions: for every device present in the Step 2 profile, pick a
     // start/duration. Prefer JS defaults (they match MockEngine), but fall

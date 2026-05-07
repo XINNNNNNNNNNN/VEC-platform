@@ -62,6 +62,21 @@
   background: var(--rigid-bg);
 }
 
+/* Phase 3.X-fix-18: BESS placeholder track. Shown when has_bess=true.
+   Distinct from .rigid (lighter grey + italic label) to read as
+   "system-managed, not user-configurable" rather than "rigid baseline
+   you can't change". Pointer-events disabled so neither click nor drag
+   triggers anything; drag handlers aren't even bound. */
+.timeline-row.bess-track {
+  background: #f1f3f5;
+  pointer-events: none;
+  cursor: default;
+}
+.timeline-row.bess-track .timeline-row-label {
+  font-style: italic;
+  color: #6c757d;
+}
+
 .device-block {
   position: absolute;
   top: 4px;

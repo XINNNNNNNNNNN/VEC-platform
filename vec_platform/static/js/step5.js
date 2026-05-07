@@ -105,21 +105,46 @@
         rowLabel.textContent = getDeviceLabel(name, state.placed);
         row.appendChild(rowLabel);
 
-        row.appendChild(makeBlock(name));
+        // Phase 3.X-fix-18: makeBlock now returns one segment for normal
+        // devices and two for those whose run wraps midnight (mirrors
+        // timeline.js).
+        for (const block of makeBlock(name)) {
+          row.appendChild(block);
+        }
         container.appendChild(row);
       }
     }
   }
 
+  // Phase 3.X-fix-18: returns [tail, head] when the configured run
+  // crosses midnight, otherwise [singleBlock]. Both segments share the
+  // same `name` and drag handler keyed on `name`.
   function makeBlock(name) {
     const meta = DEVICE_CATALOG[stripInstanceSuffix(name)];
     const pos = state.placed[name];
+    const start = pos.start;
+    const duration = pos.duration;
+    const wraps = (start + duration) > SLOTS_PER_DAY;
+
+    if (!wraps) {
+      return [_makeSegment(name, meta, start, duration, /*segRole=*/null)];
+    }
+    const tailDur = SLOTS_PER_DAY - start;
+    const headDur = duration - tailDur;
+    return [
+      _makeSegment(name, meta, start, tailDur, "tail"),
+      _makeSegment(name, meta, 0, headDur, "head"),
+    ];
+  }
+
+  function _makeSegment(name, meta, segStart, segDuration, segRole) {
     const block = document.createElement("div");
     block.className = "device-block";
+    if (segRole) block.classList.add(`device-block-${segRole}`);
     block.dataset.device = name;
     block.style.background = meta.color;
-    block.style.left = `${(pos.start / SLOTS_PER_DAY) * 100}%`;
-    block.style.width = `${(pos.duration / SLOTS_PER_DAY) * 100}%`;
+    block.style.left = `${(segStart / SLOTS_PER_DAY) * 100}%`;
+    block.style.width = `${(segDuration / SLOTS_PER_DAY) * 100}%`;
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "device-block-label";
@@ -165,8 +190,9 @@
       if (!block.classList.contains("dragging")) return;
       const dx = e.clientX - startX;
       const dSlots = Math.round((dx / rowWidth) * SLOTS_PER_DAY);
-      const duration = state.placed[name].duration;
-      const newStart = VECCompute.clampStart(startSlotAtPointerDown + dSlots, duration);
+      // Phase 3.X-fix-18: wrap (modulo) instead of clamp so dragging a
+      // device past midnight lands it on the other side of the day.
+      const newStart = VECCompute.wrapStart(startSlotAtPointerDown + dSlots);
       if (newStart !== state.placed[name].start) {
         state.placed[name].start = newStart;
         block.style.left = `${(state.placed[name].start / SLOTS_PER_DAY) * 100}%`;
@@ -221,6 +247,10 @@
           action: "move",
         }).catch((err) => console.warn("drag-log failed", err));
       }
+      // Phase 3.X-fix-18: re-render so a wrapped device shows as two
+      // cleanly aligned segments (tail at right, head at left) rather
+      // than a single block clipped at the right edge.
+      renderTimeline();
     }
 
     block.addEventListener("pointerup", endDrag);

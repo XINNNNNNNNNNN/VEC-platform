@@ -102,10 +102,20 @@ def get_profile(
         DailyProfile.session_id == session_id,
         DailyProfile.step == step
     ).first()
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    
+
+    # Phase 3.X-fix-18: surface has_bess so Step 3 can render the BESS
+    # placeholder track (display-only; auto-managed simulation deferred).
+    user_input = (
+        db.query(UserInput)
+        .filter(UserInput.session_id == session_id)
+        .order_by(UserInput.id.desc())
+        .first()
+    )
+    has_bess = bool(user_input.has_bess) if user_input is not None else False
+
     return {
         "session_id": profile.session_id,
         "step": profile.step,
@@ -114,6 +124,7 @@ def get_profile(
         "pv_generation": json.loads(profile.pv_generation),
         "net_load": json.loads(profile.net_load),
         "devices": json.loads(profile.devices),
+        "has_bess": has_bess,
     }
 
 
@@ -168,11 +179,16 @@ def recalculate(
 
     devices: dict[str, list[float]] = {"base_load": base_load}
     for pos in data.device_positions:
+        # Phase 3.X-fix-18: wrap-aware slot fill so a device that crosses
+        # midnight (start=90, duration=20) actually contributes load on
+        # both sides of the cycle. Pre-fix-18 the loop clipped at
+        # SLOTS_PER_DAY and silently dropped the wrapped tail, so the
+        # bill diverged from what the user saw on the wrapped timeline.
         arr = [0.0] * SLOTS_PER_DAY
-        start = max(0, min(SLOTS_PER_DAY, pos.start_slot))
-        end = max(start, min(SLOTS_PER_DAY, pos.start_slot + pos.duration_slots))
-        for i in range(start, end):
-            arr[i] = pos.load_kw
+        start = pos.start_slot % SLOTS_PER_DAY
+        duration = max(0, min(SLOTS_PER_DAY, pos.duration_slots))
+        for i in range(duration):
+            arr[(start + i) % SLOTS_PER_DAY] = pos.load_kw
         devices[pos.name] = arr
 
     # Stash scale_factor as metadata. Underscore-prefixed keys are skipped
