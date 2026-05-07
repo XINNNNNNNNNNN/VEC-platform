@@ -19,6 +19,10 @@
     // Phase 3.X-fix-18: drives the BESS placeholder track. Display-only;
     // auto-managed charge/discharge simulation is deferred.
     hasBess: false,
+    // Phase 3.X-fix-19: SE3 summer retail-price array (96 slots). Used
+    // to compute the BESS placeholder charge/discharge windows. Fetched
+    // alongside the profile.
+    spotPrices: null,
   };
 
   // ---- DOM helpers ----
@@ -63,14 +67,10 @@
     // session's user_inputs.has_bess is true. Display-only — no drag,
     // no charge/discharge simulation. Auto-managed dispatch will be
     // added in a later refactor phase.
+    // Phase 3.X-fix-19: row body now shows 96 slots tinted by the
+    // charge / discharge schedule derived from spot prices.
     if (state.hasBess) {
-      const bessRow = document.createElement("div");
-      bessRow.className = "timeline-row bess-track";
-      const bessLabel = document.createElement("div");
-      bessLabel.className = "timeline-row-label";
-      bessLabel.textContent = "Battery storage (auto-managed)";
-      bessRow.appendChild(bessLabel);
-      container.appendChild(bessRow);
+      container.appendChild(VECBessUI.makeRow(state.spotPrices));
     }
 
     // One row per placed device instance, in a stable order so the
@@ -157,6 +157,7 @@
     const label = block.querySelector(".device-block-label");
     if (label) label.textContent = rangeLabel(pos.start, pos.duration);
   }
+
 
   // ---- Drag handling ----
   function attachDrag(block, name) {
@@ -505,9 +506,17 @@
     }
     $("session-label").textContent = `Session: ${state.sessionId.slice(0, 8)}…`;
 
-    let profile;
+    let profile, shadow;
     try {
-      profile = await VECApi.getProfile(state.sessionId, 2);
+      // Phase 3.X-fix-19: fetch shadow prices in parallel so the BESS
+      // placeholder row can colour its 96 slots from the SE3 retail
+      // curve. /api/shadow-prices is GET-creates-if-missing, so calling
+      // from Step 3 is safe even though Step 4 is normally where the
+      // session-level row gets created.
+      [profile, shadow] = await Promise.all([
+        VECApi.getProfile(state.sessionId, 2),
+        VECApi.getShadowPrices(state.sessionId),
+      ]);
     } catch (err) {
       showError("Failed to load your Step 2 profile. Please complete Step 1 & 2 first.");
       console.error(err);
@@ -520,6 +529,9 @@
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
     state.hasBess = !!profile.has_bess;
+    // Phase 3.X-fix-19: retail price drives the BESS schedule. Fall
+    // back to internal_buy if a future API rev drops retail_price.
+    state.spotPrices = (shadow && (shadow.retail_price || shadow.internal_buy)) || null;
 
     // Seed positions: for every device present in the Step 2 profile, pick a
     // start/duration. Prefer JS defaults (they match MockEngine), but fall

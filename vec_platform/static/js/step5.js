@@ -29,6 +29,10 @@
     baseLoad: null,
     pvGeneration: null,
     shadowPrices: null,        // { retail_price, internal_buy, internal_sell, feed_in_price }
+    // Phase 3.X-fix-19: drives the BESS placeholder track on Step 5
+    // (mirrors timeline.js fix-18+19). Schedule comes from shadowPrices,
+    // so the visual matches Step 3's BESS row exactly.
+    hasBess: false,
     step2NetLoad: null,
     step3NetLoad: null,
     originalPositions: {},     // Step 3 positions, the starting point
@@ -89,6 +93,14 @@
     rigidLabel.textContent = "Base load (fridge / lighting / peaks)";
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
+
+    // Phase 3.X-fix-19: BESS placeholder row, identical schedule to
+    // Step 3 (both compute from the same retail-price array via the
+    // shared VECBessUI.makeRow helper).
+    if (state.hasBess) {
+      const prices = state.shadowPrices && state.shadowPrices.retail_price;
+      container.appendChild(VECBessUI.makeRow(prices));
+    }
 
     // v3.X-fix-5b: expand each base type to its #1..MAX_INSTANCES_PER_BASE
     // instances so users see one timeline row per instance. Row label
@@ -588,6 +600,10 @@
     state.step2NetLoad = step2.net_load;
     state.step3NetLoad = step3.net_load;
     state.shadowPrices = shadow;
+    // Phase 3.X-fix-19: gate the Step 5 BESS placeholder row on the
+    // same has_bess flag the Step 3 page reads (both come from
+    // /api/profile, which fix-18 extended).
+    state.hasBess = !!step2.has_bess;
 
     // Seed placed positions from Step 3's device arrays.
     for (const [name, arr] of Object.entries(step3.devices)) {

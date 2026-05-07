@@ -1,7 +1,8 @@
 // Shared compute helpers used by Step 3 (timeline.js) and Step 5 (step5.js).
 // Pure functions — no DOM, no network. All pricing constants live in devices.js.
 //
-// Global: VECCompute
+// Globals: VECCompute (compute), VECBessUI (DOM helper for BESS placeholder
+// row, kept here so Step 3 and Step 5 produce identical markup).
 const VECCompute = (() => {
   // Phase 3.X-fix-18: timeline interpreted as a single 24h cycle, so a
   // device dragged past midnight wraps to the start of the day rather
@@ -127,6 +128,45 @@ const VECCompute = (() => {
     return s * SLOT_HOURS * load_kw;
   }
 
+  // Phase 3.X-fix-19: BESS placeholder schedule. Find the contiguous
+  // window of `n` slots with the smallest sum (charge) and the largest
+  // sum (discharge) over `prices`. O(N) sliding window. Returns slot
+  // indices in [0, prices.length - n]. Display-only — no bill impact.
+  // Caller should pass n=16 for the 4-hour-window assumption (4C cell).
+  function findMinSumWindow(prices, n) {
+    if (n <= 0 || n > prices.length) return 0;
+    let windowSum = 0;
+    for (let i = 0; i < n; i++) windowSum += prices[i];
+    let bestStart = 0, bestSum = windowSum;
+    for (let i = n; i < prices.length; i++) {
+      windowSum += prices[i] - prices[i - n];
+      if (windowSum < bestSum) { bestSum = windowSum; bestStart = i - n + 1; }
+    }
+    return bestStart;
+  }
+
+  function findMaxSumWindow(prices, n) {
+    if (n <= 0 || n > prices.length) return 0;
+    let windowSum = 0;
+    for (let i = 0; i < n; i++) windowSum += prices[i];
+    let bestStart = 0, bestSum = windowSum;
+    for (let i = n; i < prices.length; i++) {
+      windowSum += prices[i] - prices[i - n];
+      if (windowSum > bestSum) { bestSum = windowSum; bestStart = i - n + 1; }
+    }
+    return bestStart;
+  }
+
+  // BESS placeholder schedule used by Step 3 + Step 5. Returns charge
+  // start, discharge start, and the shared window length. Schedule is a
+  // pure function of `prices` so Step 3 and Step 5 produce identical
+  // visuals from the same retail-price array.
+  function bessSchedule(prices, windowSlots = 16) {
+    const chargeStart = findMinSumWindow(prices, windowSlots);
+    const dischargeStart = findMaxSumWindow(prices, windowSlots);
+    return { chargeStart, dischargeStart, windowSlots };
+  }
+
   return {
     clampStart,
     wrapStart,
@@ -136,5 +176,64 @@ const VECCompute = (() => {
     computeBillScenario,
     cheapestWindow,
     costAt,
+    findMinSumWindow,
+    findMaxSumWindow,
+    bessSchedule,
   };
+})();
+
+// Phase 3.X-fix-19: BESS placeholder row builder. Pulled out of
+// timeline.js so Step 3 (timeline.js) and Step 5 (step5.js) produce
+// identical markup from the same retail-price array. Touches DOM —
+// kept here rather than VECCompute (which is pure-compute) to avoid
+// duplicating ~30 lines of identical row-building across two files.
+const VECBessUI = (() => {
+  const BESS_WINDOW_SLOTS = 16;  // 4 hours @ 15-min slots; 4C cell
+
+  // `spotPrices` is expected to be a 96-element retail-price array.
+  // Falls back to all-idle if the array is missing or wrong length so
+  // the row still renders during transient loading states.
+  function makeRow(spotPrices) {
+    const row = document.createElement("div");
+    row.className = "timeline-row bess-track";
+
+    const label = document.createElement("div");
+    label.className = "timeline-row-label";
+    label.innerHTML =
+      "Battery storage (auto-managed) " +
+      "<span class=\"bess-legend\">" +
+      "<span class=\"bess-legend-dot bess-charging\"></span> charging " +
+      "<span class=\"bess-legend-dot bess-discharging\"></span> discharging" +
+      "</span>";
+    row.appendChild(label);
+
+    const slots = document.createElement("div");
+    slots.className = "bess-slots";
+
+    let schedule = null;
+    if (Array.isArray(spotPrices) && spotPrices.length === SLOTS_PER_DAY) {
+      schedule = VECCompute.bessSchedule(spotPrices, BESS_WINDOW_SLOTS);
+    }
+
+    for (let i = 0; i < SLOTS_PER_DAY; i++) {
+      const slot = document.createElement("div");
+      slot.className = "bess-slot";
+      if (schedule) {
+        const inCharge = i >= schedule.chargeStart
+          && i < schedule.chargeStart + schedule.windowSlots;
+        const inDischarge = i >= schedule.dischargeStart
+          && i < schedule.dischargeStart + schedule.windowSlots;
+        if (inCharge) slot.classList.add("bess-charging");
+        else if (inDischarge) slot.classList.add("bess-discharging");
+        else slot.classList.add("bess-idle");
+      } else {
+        slot.classList.add("bess-idle");
+      }
+      slots.appendChild(slot);
+    }
+    row.appendChild(slots);
+    return row;
+  }
+
+  return { makeRow, BESS_WINDOW_SLOTS };
 })();

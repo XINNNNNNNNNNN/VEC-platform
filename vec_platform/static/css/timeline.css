@@ -62,13 +62,17 @@
   background: var(--rigid-bg);
 }
 
-/* Phase 3.X-fix-18: BESS placeholder track. Shown when has_bess=true.
-   Distinct from .rigid (lighter grey + italic label) to read as
-   "system-managed, not user-configurable" rather than "rigid baseline
-   you can't change". Pointer-events disabled so neither click nor drag
-   triggers anything; drag handlers aren't even bound. */
+/* Phase 3.X-fix-18 / fix-19: BESS placeholder track. Shown when
+   has_bess=true. Distinct from .rigid (lighter grey + italic label) to
+   read as "system-managed, not user-configurable" rather than "rigid
+   baseline you can't change". Pointer-events disabled so neither click
+   nor drag triggers anything; drag handlers aren't even bound. fix-19
+   adds the 96-slot child row that paints charge / discharge windows
+   from the SE3 retail-price curve — visual only, no bill impact. */
 .timeline-row.bess-track {
-  background: #f1f3f5;
+  /* fix-19: row background goes transparent; per-slot tints below
+     supply the colour. The row still has the rigid grey border. */
+  background: transparent;
   pointer-events: none;
   cursor: default;
 }
@@ -76,6 +80,41 @@
   font-style: italic;
   color: #6c757d;
 }
+
+/* fix-19: 96-slot strip rendered as a flex container under the label.
+   Absolute fill of the row so slots span the full timeline width. */
+.bess-slots {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 1;  /* below the row label (z-index: 2) so legend stays readable */
+}
+.bess-slot {
+  flex: 1 1 0;
+  height: 100%;
+}
+.bess-slot.bess-charging   { background-color: #c8e6c9; }   /* pale green */
+.bess-slot.bess-discharging { background-color: #bbdefb; }   /* pale blue */
+.bess-slot.bess-idle       { background-color: #f1f3f5; }   /* fix-18 grey */
+
+/* Inline legend in the row label. Two coloured squares + text so
+   colour-blind users still read "charging" / "discharging" textually. */
+.bess-legend {
+  font-size: 0.85em;
+  margin-left: 0.6em;
+  font-style: normal;
+  color: #495057;
+}
+.bess-legend-dot {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  border-radius: 2px;
+  margin: 0 0.15em -0.05em 0.4em;
+  vertical-align: middle;
+}
+.bess-legend-dot.bess-charging   { background: #c8e6c9; }
+.bess-legend-dot.bess-discharging { background: #bbdefb; }
 
 .device-block {
   position: absolute;
