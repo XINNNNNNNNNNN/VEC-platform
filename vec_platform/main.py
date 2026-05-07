@@ -57,13 +57,17 @@ from vec_platform.pages._helpers import _parse_session_id, make_progress
 # Importing each page module registers its Dash callbacks against
 # runtime.dash_app. Order doesn't matter as long as they're imported before
 # the first request (so before uvicorn finishes app construction).
+# Phase 4-A: removed _step2 (mock baseline page deleted) and renumbered
+# step4/6/7/8 → step3/5/6/7. Static respond/customize pages (Steps 3+5
+# in the old numbering, Steps 2+4 in the new flow) are still served
+# below by FastAPI at the historical /step3 and /step5 URLs (decision
+# 1B preserves URLs for blast-radius control).
 from vec_platform.pages import step0 as _step0
 from vec_platform.pages import step1 as _step1
-from vec_platform.pages import step2 as _step2
-from vec_platform.pages import step4 as _step4
+from vec_platform.pages import step3 as _step3
+from vec_platform.pages import step5 as _step5
 from vec_platform.pages import step6 as _step6
 from vec_platform.pages import step7 as _step7
-from vec_platform.pages import step8 as _step8
 from vec_platform.pages import tenant_disclaimer as _tenant_disclaimer
 from vec_platform.pages import info_calibration as _info_calibration
 
@@ -108,6 +112,10 @@ def display_page(pathname, search):
     """Route to the correct page based on URL."""
     session_id = _parse_session_id(search)
 
+    # Phase 4-A: 7-step flow. /dash/step2 (mock baseline page) deleted;
+    # other Dash routes shifted down by one. The static customize page
+    # (now flow Step 2) lives at /step3 and the respond page (now flow
+    # Step 4) lives at /step5 — both URLs preserved per decision 1B.
     if pathname == "/dash/step0":
         return _step0.step0_layout(session_id), make_progress(0)
     elif pathname in (None, "/dash/", "/dash", "/dash/step1"):
@@ -119,16 +127,14 @@ def display_page(pathname, search):
         return _tenant_disclaimer.tenant_disclaimer_layout(session_id), make_progress(1)
     elif pathname == "/dash/info_calibration":
         return _info_calibration.info_calibration_layout(session_id), make_progress(1)
-    elif pathname == "/dash/step2":
-        return _step2.step2_layout(session_id), make_progress(2)
-    elif pathname == "/dash/step4":
-        return _step4.step4_layout(session_id), make_progress(4)
+    elif pathname == "/dash/step3":
+        return _step3.step3_layout(session_id), make_progress(3)
+    elif pathname == "/dash/step5":
+        return _step5.step5_layout(session_id), make_progress(5)
     elif pathname == "/dash/step6":
         return _step6.step6_layout(session_id), make_progress(6)
     elif pathname == "/dash/step7":
         return _step7.step7_layout(session_id), make_progress(7)
-    elif pathname == "/dash/step8":
-        return _step8.step8_layout(session_id), make_progress(8)
     else:
         return html.Div([
             html.H3("Page not found"),
@@ -157,9 +163,9 @@ async def root():
     """Create a new session and redirect to Step 0.
 
     Each session is randomly assigned to one of three info-calibration
-    arms (A/B/C) at creation time. Phase 3 will use the arm to vary the
-    framing shown on the middle page between Step 1 and Step 2; for now
-    the arm is just stamped on the row.
+    arms (A/B/C) at creation time. The arm controls framing on the
+    intermediate ``/dash/info_calibration`` page that sits between
+    Step 1 and the (Phase 4-A renumbered) Step 2 customize page.
     """
     session_id = str(uuid.uuid4())
     arm = random.choice(["A", "B", "C"])

@@ -2,13 +2,17 @@
 
 Each session has at most one row in survey_responses. Different page
 callbacks fill different subsets of the row's columns at different points
-in the journey:
+in the journey (Phase 4-A renumbering applied):
 
-  Step 4 submit  → step4_q1_shift_intent + step4_q2_control_pref
-  Step 8 submit  → q1_willingness, q2_reasons, q3_concerns, q4_savings_perception
+  Step 3 submit  → step3_q1_shift_intent + step3_q2_control_pref
+  Step 5 submit  → step5_expectation_vs_reality
+  Step 6 submit  → step6_broader_impacts_shift
+  Step 7 submit  → q1_willingness, q3_concerns, q4_savings_perception, +
+                   q5_trust_source, q6_fairness_pref, q7_transparency_pref,
+                   demographics, drivers_top3, expert_*
 
 Whoever runs first creates the row; later writers update it. This module
-exists so both callbacks share the same get-or-create code path and don't
+exists so the callbacks share the same get-or-create code path and don't
 race-INSERT two rows for the same session.
 """
 

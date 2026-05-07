@@ -127,6 +127,14 @@ def info_calibration_layout(session_id: str | None = None):
             size="lg",
             disabled=True,
         ),
+
+        # Phase 4-A: destination changed from /dash/step2 (deleted) to
+        # the static /step3 customize page, which lives OUTSIDE the
+        # Dash mount. The root url Location has refresh=False, so Dash
+        # alone won't trigger the full browser navigation needed to
+        # reach the FastAPI route — we use a dedicated refresh=True
+        # Location (same pattern as step3.py / step5.py / step6.py).
+        dcc.Location(id="info-cal-redirect", refresh=True),
     ])
 
 
@@ -142,8 +150,7 @@ def toggle_info_cal_next(v):
 
 
 @dash_app.callback(
-    Output("url", "pathname", allow_duplicate=True),
-    Output("url", "search", allow_duplicate=True),
+    Output("info-cal-redirect", "href"),
     Output("info-cal-error", "children"),
     Input("info-cal-next-btn", "n_clicks"),
     State("info-cal-likert", "value"),
@@ -151,15 +158,20 @@ def toggle_info_cal_next(v):
     prevent_initial_call=True,
 )
 def submit_info_cal(n_clicks, likert_value, search):
-    """Persist the round-1 willingness measurement and hand off to Step 2."""
+    """Persist the round-1 willingness measurement and hand off to Step 2.
+
+    Phase 4-A: destination is the static /step3 customize page (now
+    "Step 2" in the 7-step flow). Cross-mount navigation forces a full
+    browser reload via the refresh=True info-cal-redirect Location.
+    """
     if not n_clicks:
-        return no_update, no_update, no_update
+        return no_update, no_update
 
     session_id = _parse_session_id(search)
     if not session_id:
-        return no_update, no_update, "Session id missing — please start from '/'."
+        return no_update, "Session id missing — please start from '/'."
     if likert_value is None:
-        return no_update, no_update, "Please select an option."
+        return no_update, "Please select an option."
 
     from vec_platform.models import (
         Session as SessionModel,
@@ -170,7 +182,7 @@ def submit_info_cal(n_clicks, likert_value, search):
     try:
         sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
         if sess is None:
-            return no_update, no_update, "Session not found."
+            return no_update, "Session not found."
         db.add(WillingnessMeasurement(
             session_id=session_id,
             round=1,
@@ -178,11 +190,11 @@ def submit_info_cal(n_clicks, likert_value, search):
             value=int(likert_value),
         ))
         # info_calibration sits between Step 1 and Step 2; the participant
-        # is now moving on to Step 2.
+        # is now moving on to Step 2 (customize devices).
         if sess.current_step is None or sess.current_step < 2:
             sess.current_step = 2
         db.commit()
     finally:
         db.close()
 
-    return "/dash/step2", f"?session_id={session_id}", ""
+    return f"/step3?session_id={session_id}", ""

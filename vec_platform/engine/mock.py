@@ -158,7 +158,8 @@ class MockEngine(CalculationEngine):
 
         Returns a ``ShadowPrices`` ORM row (caller does ``db.add(row)``);
         the return shape was kept as the ORM model, not a plain dict, so
-        existing callers in api/shadow_price.py and pages/step4.py keep
+        existing callers in api/shadow_price.py and pages/step3.py
+        (the prices page, renamed step4 → step3 in Phase 4-A) keep
         working unchanged.
         """
         retail = list(_SE3_SUMMER_RETAIL_SEK_PER_KWH)

@@ -26,17 +26,20 @@ def _parse_session_id(search: str | None) -> str | None:
 
 
 def make_progress(current_step: int = 0):
-    """Nine little pill-shaped badges showing where the participant is.
+    """Eight little pill-shaped badges showing where the participant is.
 
-    v3 added a Step 0 (consent + first prior-expectation guess) at the
-    front of the journey, so the badge row now has 9 pills instead of 8
-    and uses 0-based indexing throughout (current_step ∈ {0..8}).
+    Phase 4-A renumbered the flow: the old "Profile" page (mock baseline
+    display, formerly Step 2) was removed because participants couldn't
+    internalise its mock data and it polluted later willingness anchors.
+    The badge row is now 8 pills (Step 0 + Steps 1..7) and uses 0-based
+    indexing throughout (current_step ∈ {0..7} for active steps; 8 means
+    "completed").
 
     Called from the routing callback for each step.
     """
     steps = [
-        "0. Welcome", "1. Role", "2. Profile", "3. Customize", "4. Prices",
-        "5. Respond", "6. Compare", "7. Impacts", "8. Survey"
+        "0. Welcome", "1. Role", "2. Customize", "3. Prices",
+        "4. Respond", "5. Compare", "6. Impacts", "7. Survey",
     ]
     items = []
     for i, label in enumerate(steps):

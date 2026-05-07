@@ -27,7 +27,7 @@ from vec_platform.pages._helpers import _parse_session_id
 # decision lives in exactly one place. step1 hides Q5 (occupation) when
 # the user is *below* the gate; step8 shows the expert block when the
 # user is *at or above* the gate. Both must pivot on identical values.
-from vec_platform.pages.step8 import _EXPERT_FAMILIARITY_GATE
+from vec_platform.pages.step7 import _EXPERT_FAMILIARITY_GATE
 
 
 # ==================== Step 1 ====================
@@ -351,7 +351,9 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
 
     # v3.2b: route through the tenant disclaimer (renters only) or
     # straight to the info-calibration page (owners). Both pages
-    # eventually hand off to /dash/step2.
+    # eventually hand off to /step3 (the static customize page, which
+    # is "Step 2" in the Phase 4-A 7-step flow — URL preserved per
+    # decision 1B).
     if ownership_type == "tenant":
         next_path = "/dash/tenant_disclaimer"
     else:

@@ -26,7 +26,9 @@ class Session(Base):
     role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # ----- v3.0 fields -----
-    # Multi-country support: country self-selected at Step 8, language stamped
+    # Multi-country support: country self-selected at the final survey
+    # (Step 7 in the Phase 4-A 7-step flow, formerly Step 8); language
+    # stamped
     # at session creation. Defaults keep v2 behaviour (Sweden, English).
     country_code: Mapped[str] = mapped_column(
         String(8), default="SE", server_default="SE", nullable=False,
@@ -108,7 +110,9 @@ class UserInput(Base):
 
 
 class DailyProfile(Base):
-    """Step 2: 96-slot load curve data."""
+    """96-slot load curve data. Phase 4-A preserves the ``step`` value
+    semantics (2=baseline, 3=customized, 5=responded) regardless of
+    the UI flow renumbering."""
     __tablename__ = "daily_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -129,7 +133,11 @@ class DailyProfile(Base):
 
 
 class BillBreakdown(Base):
-    """Step 2, 6: Bill calculation breakdown."""
+    """Bill calculation breakdown. Written by the engine when a profile
+    is created (data step=2 baseline) or recalculated after the user
+    customises devices (data step=3) or responds to prices (data
+    step=5). Read by the comparison page (Step 5 in the Phase 4-A
+    7-step flow, formerly Step 6)."""
     __tablename__ = "bill_breakdowns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -150,7 +158,10 @@ class BillBreakdown(Base):
 
 
 class ShadowPrices(Base):
-    """Step 4: VEC internal shadow prices."""
+    """VEC internal shadow prices. Created lazily on first visit to the
+    prices page (Step 3 in the Phase 4-A 7-step flow, formerly Step 4),
+    or earlier if the customize page (Step 2) prefetched them for the
+    BESS placeholder track."""
     __tablename__ = "shadow_prices"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -166,12 +177,14 @@ class ShadowPrices(Base):
 
 
 class DeviceShift(Base):
-    """Step 3, 5: Final device positions."""
+    """Final device positions. Written from the customize page (data
+    step=3) and the respond page (data step=5). Phase 4-A preserves
+    these data step values regardless of UI flow renumbering."""
     __tablename__ = "device_shifts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
-    step: Mapped[int] = mapped_column(Integer)  # 3 or 5
+    step: Mapped[int] = mapped_column(Integer)  # 3 (customize) or 5 (respond) — data tags
     device_name: Mapped[str] = mapped_column(String(100))
     original_start: Mapped[int] = mapped_column(Integer)
     original_end: Mapped[int] = mapped_column(Integer)
@@ -185,7 +198,8 @@ class DeviceShift(Base):
 
 
 class DragLog(Base):
-    """Step 3, 5: Every drag operation logged."""
+    """Every drag operation logged. Written from the customize page
+    (data step=3) and the respond page (data step=5)."""
     __tablename__ = "drag_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -206,60 +220,68 @@ class DragLog(Base):
 class SurveyResponse(Base):
     """Per-session survey row, filled across multiple page submissions.
 
-    Step 4 inserts a row with the two ``step4_*`` fields (and NULLs for
-    everything else); Step 8 then UPSERTs to fill q1-q4. Hence q1-q4 must
-    be nullable — they're populated later in the flow than the row's
-    creation. Each session has at most one row (enforced by the upsert
-    pattern in pages/_survey_helpers.get_or_create_survey_row).
+    Phase 4-A renamed columns step4_* → step3_*, step5_* → step4_*,
+    step6_* → step5_*, step7_* → step6_* to match the 7-step flow.
+    Step 3 (prices) inserts a row with the two ``step3_*`` fields (and
+    NULLs for everything else); Step 7 (final survey) then UPSERTs to
+    fill q1-q4. Hence q1-q4 must be nullable — they're populated later
+    in the flow than the row's creation. Each session has at most one
+    row (enforced by the upsert pattern in
+    pages/_survey_helpers.get_or_create_survey_row).
     """
     __tablename__ = "survey_responses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
 
-    # v3.5: relaxed to nullable so Step 4 can create the row before
-    # Step 8 fills these in. Validation at the page layer still requires
-    # q1 and q4 before submit fires.
+    # v3.5: relaxed to nullable so the Step 3 prices page can create the
+    # row before the Step 7 survey fills these in. Validation at the
+    # page layer still requires q1 and q4 before submit fires.
     q1_willingness: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     q2_reasons: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
     q3_concerns: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
     q4_savings_perception: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    # v3.5 — Step 4 selection answers.
-    step4_q1_shift_intent: Mapped[Optional[str]] = mapped_column(
+    # v3.5 — Step 3 prices-page selection answers (renamed from step4_*
+    # in Phase 4-A).
+    step3_q1_shift_intent: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'yes' / 'maybe' / 'no'
-    step4_q2_control_pref: Mapped[Optional[str]] = mapped_column(
+    step3_q2_control_pref: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'manual' / 'recommend' / 'auto'
 
-    # v3.6 — Step 5 counterfactual + perceived effort follow-ups.
-    # Asked after the participant has dragged devices in response to
-    # shadow prices on Step 5; piggybacked on the first device-shift POST.
-    step5_q1_counterfactual: Mapped[Optional[str]] = mapped_column(
+    # v3.6 — Step 4 respond-page counterfactual + perceived effort
+    # follow-ups (renamed from step5_* in Phase 4-A). Asked after the
+    # participant has dragged devices in response to shadow prices;
+    # piggybacked on the first device-shift POST.
+    step4_q1_counterfactual: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'yes' / 'no' / 'maybe'
-    step5_q2_effort: Mapped[Optional[str]] = mapped_column(
+    step4_q2_effort: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'easy' / 'acceptable' / 'disruptive' / 'none'
 
-    # v3.7 — Step 6 disappointment Likert (1=much less than expected ..
-    # 5=much more than expected). The companion 5-point "would you
-    # consider joining?" Likert lives in willingness_measurements with
-    # round=2 (kept in that table to keep all three willingness
-    # measurements — info_calibration / step6 / step8 — uniform).
-    step6_expectation_vs_reality: Mapped[Optional[int]] = mapped_column(
+    # v3.7 — Step 5 compare-page disappointment Likert (renamed from
+    # step6_* in Phase 4-A). 1=much less than expected .. 5=much more.
+    # The companion 5-point "would you consider joining?" Likert lives
+    # in willingness_measurements with round=2 (kept in that table to
+    # keep all three willingness measurements — info_calibration /
+    # Step 5 / Step 7 — uniform).
+    step5_expectation_vs_reality: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
     )
 
-    # v3.8 — Step 7 broader-impacts shift Likert. "Now that you've seen
-    # the policy / grid / environment tabs, has this changed your view
-    # about joining a VEC?" 1=much less interested .. 5=much more.
-    step7_broader_impacts_shift: Mapped[Optional[int]] = mapped_column(
+    # v3.8 — Step 6 impacts-page broader-impacts shift Likert (renamed
+    # from step7_* in Phase 4-A). "Now that you've seen the policy /
+    # grid / environment tabs, has this changed your view about joining
+    # a VEC?" 1=much less interested .. 5=much more.
+    step6_broader_impacts_shift: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
     )
 
-    # v3.9 — Step 8 expansion: 3 new survey questions + 3 expert-only
+    # v3.9 — final-survey expansion (Step 7 in the Phase 4-A 7-step
+    # flow, formerly Step 8): 3 new survey questions + 3 expert-only
     # questions + 3 demographics fields. All nullable: experts get the
     # expert_* trio asked, non-experts leave them NULL; demographics are
     # asked of everyone but country defaults at submit time.
@@ -297,13 +319,14 @@ class SurveyResponse(Base):
     #     / 'transparency' / 'grid_benefit' / 'control' / 'community' /
     #     'other'. fix-8 merged the legacy Q2_reasons question into this
     #     field — the 9 values keep E.ON Q13 cross-reference, but the
-    #     Step 8 layout shows them under the conversational Q2 wording
-    #     ("top reasons to join"). q2_reasons column kept as an escape
-    #     hatch for the legacy /api/survey endpoint but is no longer
-    #     written by the Step 8 submit handler.
+    #     final-survey layout shows them under the conversational Q2
+    #     wording ("top reasons to join"). q2_reasons column kept as an
+    #     escape hatch for the legacy /api/survey endpoint but is no
+    #     longer written by the final-survey submit handler.
     #
     # fairness_likert (E.ON Q11) was added in fix-7 and dropped in fix-8
-    # (overlap with q6_fairness_pref + no clean Step 7 placement).
+    # (overlap with q6_fairness_pref + no clean placement on the impacts
+    # page).
     drivers_top3: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
     )
@@ -317,9 +340,11 @@ class SurveyResponse(Base):
 class PriorExpectation(Base):
     """First and second savings-percentage guesses.
 
-    Phase 3 will write one row at Step 0 (measurement_round=1) and another at
-    Step 2 (measurement_round=2) so we can compare expectations before vs.
-    after seeing the participant's own load curve.
+    measurement_round=1 is written at Step 0 (welcome / consent page);
+    measurement_round=2 is written at the customize page (Step 2 in the
+    Phase 4-A 7-step flow, formerly Step 3) on the first device-shift
+    POST piggyback. Comparing rounds tells us how expectations move
+    once the participant sees their own customised schedule.
     """
     __tablename__ = "prior_expectations"
 
@@ -329,8 +354,9 @@ class PriorExpectation(Base):
     )
     measurement_round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 or 2
     pct: Mapped[float] = mapped_column(Float, nullable=False)  # 0.0 – 50.0
-    # 5-point confidence Likert, only collected at round=2 (Step 2 page).
-    # NULL for round=1 rows from Step 0.
+    # 5-point confidence Likert, only collected at round=2 (the
+    # customize page, Step 2 in the 7-step flow). NULL for round=1
+    # rows from Step 0.
     confidence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
@@ -338,7 +364,9 @@ class PriorExpectation(Base):
 
 
 class ExitThreshold(Base):
-    """Step 8 exit-threshold question (5-choice: 100/75/50/25/0% of stated savings)."""
+    """Final-survey exit-threshold question (Step 7 in the Phase 4-A
+    7-step flow, formerly Step 8). 5-choice: 100/75/50/25/0% of stated
+    savings."""
     __tablename__ = "exit_thresholds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -362,13 +390,17 @@ class ExitThreshold(Base):
 class WillingnessMeasurement(Base):
     """Three measurements of willingness across the journey.
 
-    round=1 — info-calibration page, 7-point Likert ("how interested are
-              you in joining?")
-    round=2 — Step 6 (after seeing the bill comparison), 5-point Likert
-              ("would you actually consider joining?")  [Phase 3.7]
-    round=3 — Step 8 (final acceptance), 4-point scale                [Phase 3.9]
+    Phase 4-A flow positions (formerly Step 6 / Step 8 → now Step 5 /
+    Step 7):
 
-    Phase 3.2b only writes round=1 rows; the other rounds land later.
+    round=1 — info-calibration page, 7-point Likert ("how interested
+              are you in joining?")
+    round=2 — Step 5 compare page (after seeing the bill comparison),
+              5-point Likert ("would you actually consider joining?")
+    round=3 — Step 7 final survey (final acceptance), 4-point scale
+
+    Phase 3.2b's first write was the round=1 row; the other rounds
+    land later in the journey.
     """
     __tablename__ = "willingness_measurements"
 

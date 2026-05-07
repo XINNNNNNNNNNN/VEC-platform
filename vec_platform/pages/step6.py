@@ -1,15 +1,15 @@
-"""Step 6 — three-way bill comparison + disappointment & consider Likerts.
+"""Step 6 — broader impacts (Policy / Grid / Environment tabs).
 
-Pulls per-scenario bills (preferring the right ``step``) plus Step 2/3/5
-profiles, builds three summary cards, a breakdown table and a three-line
-net-load chart. Phase 3.7 added two follow-up questions at the bottom:
+Phase 4-A: renumbered from Step 7 (8-step flow) to Step 6 (7-step flow).
+File renamed step7.py → step6.py; identifiers, DB column names, and UI
+labels updated accordingly. Data step values in daily_profiles are
+preserved (decision 2a), so the impact computation still queries
+step=2/3/5 unchanged.
 
-  Q6-1 disappointment vs expectation — 5-point Likert, persisted on
-       survey_responses.step6_expectation_vs_reality
-  Q6-2 would-you-consider Likert — 5-point, persisted as
-       willingness_measurements(round=2, scale_type='5point_consider')
-       to keep all three willingness measurements (info_calibration /
-       Step 6 / Step 8) in one uniform table
+Session-specific numbers are derived from baseline vs responded
+net-loads in ``_compute_impacts``. A single 5-point Likert below the
+tabs ("has this changed your view about joining a VEC?") is persisted
+as survey_responses.step6_broader_impacts_shift via the upsert helper.
 
 Importing this module registers two Dash callbacks against ``dash_app``.
 """
@@ -21,279 +21,281 @@ from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 
-from vec_platform.config import SLOTS_PER_DAY
 from vec_platform.runtime import SessionLocal, dash_app
-from vec_platform.pages._helpers import (
-    _slot_to_hour,
-    _get_profile_at_step,
-    _parse_session_id,
-)
+from vec_platform.pages._helpers import _get_profile_at_step, _parse_session_id
 
 
 # ==================== Step 6 ====================
 
-def _pick_scenario_bill(db, session_id: str, scenario: str, preferred_step: int):
-    """Find the right bill for each scenario, falling back sensibly."""
-    from vec_platform.models import BillBreakdown
-
-    q = db.query(BillBreakdown).filter(
-        BillBreakdown.session_id == session_id,
-        BillBreakdown.scenario == scenario,
-    )
-    bill = (
-        q.filter(BillBreakdown.step == preferred_step)
-        .order_by(BillBreakdown.id.desc())
-        .first()
-    )
-    if bill is None:
-        bill = q.order_by(BillBreakdown.step.desc(), BillBreakdown.id.desc()).first()
-    return bill
+_CO2_FACTOR_KG_PER_KWH = 0.045  # Nordic electricity mix
+_TREE_CO2_KG_PER_YEAR = 21.0   # rough, but commonly cited
 
 
-_SCENARIO_META = {
-    "no_vec": {
-        "title": "Without VEC",
-        "subtitle": "Your original schedule, no community",
-        "color": "secondary",
-        "accent": "#6c757d",
-        "preferred_step": 2,
-    },
-    "vec_no_adjust": {
-        "title": "VEC · same schedule",
-        "subtitle": "You joined, but didn't shift loads",
-        "color": "info",
-        "accent": "#3498db",
-        "preferred_step": 3,
-    },
-    "vec_adjusted": {
-        "title": "VEC · after responding",
-        "subtitle": "You joined and shifted loads into cheap hours",
-        "color": "success",
-        "accent": "#27ae60",
-        "preferred_step": 5,
-    },
-}
+def _compute_impacts(db, session_id: str):
+    """Session-specific impact numbers derived from baseline (data
+    step=2) vs responded (data step=5) net-loads.
+
+    Returns deterministic figures so refreshing the tab doesn't jiggle
+    them. Phase 4-A: data step values preserved (decision 2a) — the
+    queries still use 2/3/5 even though UI flow positions changed.
+    """
+    p2 = _get_profile_at_step(db, session_id, 2)
+    p3 = _get_profile_at_step(db, session_id, 3) or p2
+    p5 = _get_profile_at_step(db, session_id, 5) or p3
+    if p2 is None:
+        return None
+
+    def totals(net):
+        imported = sum(max(0.0, x) for x in net) * 0.25
+        exported = sum(max(0.0, -x) for x in net) * 0.25
+        return imported, exported, max(net)
+
+    imp2, exp2, peak2 = totals(json.loads(p2.net_load))
+    imp5, exp5, peak5 = totals(json.loads(p5.net_load))
+
+    import_saved_monthly_kwh = (imp2 - imp5) * 30
+    export_diff_monthly_kwh = (exp5 - exp2) * 30
+    co2_saved_kg_month = import_saved_monthly_kwh * _CO2_FACTOR_KG_PER_KWH
+    co2_saved_kg_year = co2_saved_kg_month * 12
+    trees_per_year = co2_saved_kg_year / _TREE_CO2_KG_PER_YEAR
+    peak_reduction_pct = (peak2 - peak5) / peak2 * 100 if peak2 else 0
+
+    return {
+        "import_baseline_monthly_kwh": imp2 * 30,
+        "import_responsive_monthly_kwh": imp5 * 30,
+        "import_saved_monthly_kwh": import_saved_monthly_kwh,
+        "export_diff_monthly_kwh": export_diff_monthly_kwh,
+        "co2_saved_kg_month": co2_saved_kg_month,
+        "co2_saved_kg_year": co2_saved_kg_year,
+        "trees_per_year": trees_per_year,
+        "peak_baseline_kw": peak2,
+        "peak_responsive_kw": peak5,
+        "peak_reduction_pct": peak_reduction_pct,
+    }
 
 
-def _bill_summary_card(scenario: str, bill, baseline_net: float) -> dbc.Card:
-    meta = _SCENARIO_META[scenario]
-    saving = baseline_net - bill.net_cost
-    pct = (saving / baseline_net * 100) if baseline_net else 0
-
-    if scenario == "no_vec":
-        badge = html.Span("baseline", className="badge bg-secondary")
-    elif saving > 0:
-        badge = html.Span(
-            f"−{saving:,.0f} SEK / month  ({pct:.1f}% off)",
-            className="badge bg-success fs-6",
-        )
-    else:
-        badge = html.Span(
-            f"+{-saving:,.0f} SEK / month",
-            className="badge bg-danger fs-6",
-        )
-
-    return dbc.Card(
-        [
-            dbc.CardHeader(
-                html.Div([
-                    html.Strong(meta["title"]),
-                    html.Div(meta["subtitle"], className="small text-muted"),
+def _policy_tab(impacts: dict) -> html.Div:
+    return html.Div([
+        html.H5("Policy headwinds — and how VEC cushions them", className="mt-2"),
+        html.P([
+            "From 2026 the Swedish ",
+            html.I("skattereduktion"),
+            " tax credit for small-scale producers is being phased out and a "
+            "capacity-based grid tariff (",
+            html.I("effekttariff"), ") is rolling out. Both make individual ",
+            "prosumer economics worse — but a community changes the math.",
+        ]),
+        dbc.Row([
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.Strong("No tax credit for export")),
+                dbc.CardBody([
+                    html.P(
+                        "Outside a VEC, exported solar earns only the grid's "
+                        "feed-in rate (~0.50 SEK/kWh). Inside the VEC, the "
+                        "internal-sell price is ~1.05 SEK/kWh — more than 2× "
+                        "the outside rate during community deficit hours."
+                    ),
+                    html.Small(
+                        "Source of the policy change: Riksdag budget 2024/25.",
+                        className="text-muted",
+                    ),
                 ]),
-                style={"borderTop": f"4px solid {meta['accent']}"},
-            ),
-            dbc.CardBody([
-                html.Div(f"{bill.net_cost:,.0f} SEK", className="h3 mb-0"),
-                html.Div("per month", className="small text-muted mb-2"),
-                badge,
-            ]),
-        ],
-        className="h-100",
-    )
+            ]), md=6),
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.Strong("Effekttariff (capacity charges)")),
+                dbc.CardBody([
+                    html.P(
+                        "Grid operators increasingly bill on peak kW, not just "
+                        "total kWh. Without coordination, an EV plugged in at "
+                        "6 pm hits the daily peak; with VEC load-shifting, "
+                        "peaks are shaved."
+                    ),
+                    html.Div([
+                        html.Span(
+                            f"Your peak: {impacts['peak_baseline_kw']:.1f} kW "
+                            f"→ {impacts['peak_responsive_kw']:.1f} kW",
+                            className="me-2",
+                        ),
+                        html.Span(
+                            f"({impacts['peak_reduction_pct']:.0f}% lower)",
+                            className="badge bg-success",
+                        ) if impacts['peak_reduction_pct'] > 0 else html.Span(
+                            "No change in peak yet",
+                            className="badge bg-secondary",
+                        ),
+                    ]),
+                ]),
+            ]), md=6),
+        ], className="g-3"),
+    ])
 
 
-def _breakdown_row(label: str, values: list[float], fmt_sign: bool = False) -> html.Tr:
-    def cell(v: float) -> html.Td:
-        sign = "+" if (fmt_sign and v > 0) else ("−" if (fmt_sign and v < 0) else "")
-        txt = f"{sign}{abs(v):,.0f} SEK" if fmt_sign else f"{v:,.0f} SEK"
-        return html.Td(txt, className="text-end")
+def _grid_tab(impacts: dict) -> html.Div:
+    # Imagine a community of 100 homes with a shared transformer.
+    COMMUNITY_SIZE = 100
+    transformer_capacity_kw = 400  # illustrative
 
-    return html.Tr([html.Td(label)] + [cell(v) for v in values])
+    baseline_community_peak = impacts["peak_baseline_kw"] * COMMUNITY_SIZE * 0.6
+    responsive_community_peak = impacts["peak_responsive_kw"] * COMMUNITY_SIZE * 0.6
+    baseline_load_pct = baseline_community_peak / transformer_capacity_kw * 100
+    responsive_load_pct = responsive_community_peak / transformer_capacity_kw * 100
 
-
-def _breakdown_table(bills: dict) -> dbc.Table:
-    order = ["no_vec", "vec_no_adjust", "vec_adjusted"]
-    header = html.Thead(html.Tr([
-        html.Th("Line item"),
-        *[html.Th(_SCENARIO_META[s]["title"], className="text-end") for s in order],
-    ]))
-
-    def col(key: str):
-        return [getattr(bills[s], key) for s in order]
-
-    # Discounts/income reduce the bill, so show them with a − sign for clarity.
-    def col_negated(key: str):
-        return [-getattr(bills[s], key) for s in order]
-
-    rows = [
-        _breakdown_row("Electricity purchase", col("energy_purchase")),
-        _breakdown_row("Grid fee", col("grid_fee")),
-        _breakdown_row("Energy tax", col("energy_tax")),
-        _breakdown_row("PV self-consumption (value)", col_negated("pv_self_consumption"), fmt_sign=True),
-        _breakdown_row("VEC discount", col_negated("vec_discount"), fmt_sign=True),
-        _breakdown_row("Feed-in income", col_negated("feed_in_income"), fmt_sign=True),
-    ]
-    total = html.Tr(
-        [html.Td(html.B("Net monthly cost"))]
-        + [html.Td(html.B(f"{getattr(bills[s], 'net_cost'):,.0f} SEK"),
-                   className="text-end") for s in order],
-        className="table-active",
-    )
-
-    return dbc.Table(
-        [header, html.Tbody(rows + [total])],
-        bordered=True,
-        hover=True,
-        responsive=True,
-        size="sm",
-    )
-
-
-def _compare_figure(net_baseline: list, net_customized: list, net_responsive: list) -> go.Figure:
-    hours = [_slot_to_hour(i) for i in range(SLOTS_PER_DAY)]
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=hours, y=net_baseline,
-        name="Step 2 — baseline",
-        mode="lines",
-        line=dict(color="#adb5bd", width=1.5, dash="dash"),
-        hovertemplate="%{y:.2f} kW<extra>Baseline</extra>",
+    bar_fig = go.Figure()
+    bar_fig.add_trace(go.Bar(
+        x=["Baseline", "After VEC"],
+        y=[baseline_community_peak, responsive_community_peak],
+        marker=dict(color=["#adb5bd", "#27ae60"]),
+        text=[f"{baseline_community_peak:.0f} kW", f"{responsive_community_peak:.0f} kW"],
+        textposition="auto",
     ))
-    fig.add_trace(go.Scatter(
-        x=hours, y=net_customized,
-        name="Step 3 — customized",
-        mode="lines",
-        line=dict(color="#3498db", width=2),
-        hovertemplate="%{y:.2f} kW<extra>Customized</extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=hours, y=net_responsive,
-        name="Step 5 — after responding",
-        mode="lines",
-        line=dict(color="#27ae60", width=2.5),
-        hovertemplate="%{y:.2f} kW<extra>Responded</extra>",
-    ))
-    fig.update_layout(
-        height=360,
-        margin=dict(l=50, r=20, t=20, b=40),
-        xaxis=dict(title="Hour of day", tickmode="array",
-                   tickvals=list(range(0, 25, 3)), range=[0, 24]),
-        yaxis=dict(title="Net load (kW)"),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.35),
-        hovermode="x unified",
+    bar_fig.add_hline(
+        y=transformer_capacity_kw, line_dash="dot", line_color="#e74c3c",
+        annotation_text=f"Transformer rating {transformer_capacity_kw} kW",
+        annotation_position="top right",
     )
-    return fig
+    bar_fig.update_layout(
+        height=300,
+        showlegend=False,
+        margin=dict(l=40, r=20, t=20, b=30),
+        yaxis=dict(title="Aggregated community peak (kW)"),
+    )
+
+    return html.Div([
+        html.H5("Grid impact at the community level", className="mt-2"),
+        html.P(
+            "Imagine 100 households just like yours sharing one neighbourhood "
+            "transformer. Small individual shifts add up to something the grid "
+            "operator can measure."
+        ),
+        dbc.Row([
+            dbc.Col(dcc.Graph(figure=bar_fig, config={"displayModeBar": False}), md=7),
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.Strong("Transformer utilisation")),
+                dbc.CardBody([
+                    html.Div(f"{baseline_load_pct:.0f}% → {responsive_load_pct:.0f}%",
+                             className="h3 mb-0"),
+                    html.Div("at peak hour", className="small text-muted mb-2"),
+                    html.P(
+                        "Lower utilisation means less stress on grid "
+                        "infrastructure and postponed reinforcement "
+                        "investment — benefits ultimately shared across all "
+                        "customers on the network.",
+                        className="small mb-0",
+                    ),
+                ]),
+            ]), md=5),
+        ], className="g-3"),
+    ])
+
+
+def _environment_tab(impacts: dict) -> html.Div:
+    month_kg = impacts["co2_saved_kg_month"]
+    year_kg = impacts["co2_saved_kg_year"]
+    trees = impacts["trees_per_year"]
+    import_saved = impacts["import_saved_monthly_kwh"]
+
+    def metric(label: str, value: str, sub: str = "") -> dbc.Col:
+        return dbc.Col(dbc.Card(dbc.CardBody([
+            html.Div(label, className="small text-muted"),
+            html.Div(value, className="h3 mb-0"),
+            html.Div(sub, className="small text-muted") if sub else None,
+        ])), md=4)
+
+    return html.Div([
+        html.H5("Environmental impact", className="mt-2"),
+        html.P(
+            "Every kWh you pull from the grid has an emissions footprint — "
+            "about 45 g of CO₂ on the Nordic mix. Shifting your load to "
+            "midday keeps more locally-produced solar power inside the "
+            "community and lowers the grid-import intensity."
+        ),
+        dbc.Row([
+            metric("Grid imports avoided",
+                   f"{import_saved:,.0f} kWh / month",
+                   "vs. your baseline schedule"),
+            metric("CO₂ avoided",
+                   f"{month_kg:,.1f} kg / month",
+                   f"≈ {year_kg:,.0f} kg per year"),
+            metric("Equivalent to",
+                   f"{trees:,.1f} trees 🌱",
+                   "planted for one year"),
+        ], className="g-3 mb-3"),
+        dbc.Alert(
+            [
+                html.Strong("Why this matters. "),
+                "These numbers are for your household alone. A 100-home VEC "
+                "adds up to roughly ",
+                html.Span(f"{year_kg * 100:,.0f} kg CO₂ per year", className="fw-bold"),
+                " — the sort of figure a municipality can put in its climate plan.",
+            ],
+            color="success",
+            className="small mb-0",
+        ),
+    ])
 
 
 def step6_layout(session_id: str | None):
     if not session_id:
         return html.Div([
-            html.H2("Step 6: Your savings breakdown"),
+            html.H2("Step 6: Broader impacts"),
             dbc.Alert("No session found. Please start from Step 1.", color="warning"),
         ])
 
     db = SessionLocal()
     try:
-        bills = {
-            s: _pick_scenario_bill(db, session_id, s, _SCENARIO_META[s]["preferred_step"])
-            for s in ("no_vec", "vec_no_adjust", "vec_adjusted")
-        }
-        p2 = _get_profile_at_step(db, session_id, 2)
-        p3 = _get_profile_at_step(db, session_id, 3) or p2
-        p5 = _get_profile_at_step(db, session_id, 5) or p3
+        impacts = _compute_impacts(db, session_id)
     finally:
         db.close()
 
-    if any(b is None for b in bills.values()) or p2 is None:
+    if impacts is None:
         return html.Div([
-            html.H2("Step 6: Your savings breakdown"),
+            html.H2("Step 6: Broader impacts"),
             dbc.Alert(
-                "Missing bill or profile data — please complete Step 1–5 first.",
+                "No profile data. Please complete Step 1–4 first.",
                 color="warning",
             ),
         ])
 
-    baseline_net = bills["no_vec"].net_cost
-
-    net_baseline = json.loads(p2.net_load)
-    net_customized = json.loads(p3.net_load)
-    net_responsive = json.loads(p5.net_load)
+    tabs = dbc.Tabs(
+        [
+            dbc.Tab(_policy_tab(impacts), label="Policy", tab_id="policy"),
+            dbc.Tab(_grid_tab(impacts), label="Grid", tab_id="grid"),
+            dbc.Tab(_environment_tab(impacts), label="Environment",
+                    tab_id="environment"),
+        ],
+        active_tab="policy",
+        className="mb-3",
+    )
 
     return html.Div([
-        html.H2("Step 6: Your savings breakdown"),
+        html.H2("Step 6: Broader impacts"),
         html.P(
-            "Three ways to pay for electricity next month — starting from your "
-            "original schedule, then joining VEC without changing habits, and "
-            "finally shifting loads into the community's cheap hours."
+            "VEC isn't only about your monthly bill. Your decisions also "
+            "ripple out into policy, the local grid, and the environment. "
+            "Flip through the tabs below."
         ),
+        tabs,
 
-        dbc.Row([
-            dbc.Col(_bill_summary_card("no_vec", bills["no_vec"], baseline_net), md=4),
-            dbc.Col(_bill_summary_card("vec_no_adjust", bills["vec_no_adjust"], baseline_net), md=4),
-            dbc.Col(_bill_summary_card("vec_adjusted", bills["vec_adjusted"], baseline_net), md=4),
-        ], className="g-3 mb-4"),
-
-        dbc.Card([
-            dbc.CardHeader(html.H5("Detailed monthly breakdown", className="mb-0")),
-            dbc.CardBody(_breakdown_table(bills)),
-        ], className="mb-3"),
-
-        dbc.Card([
-            dbc.CardHeader(html.H5("Net load across the day", className="mb-0")),
-            dbc.CardBody(dcc.Graph(
-                figure=_compare_figure(net_baseline, net_customized, net_responsive),
-                config={"displayModeBar": False},
-            )),
-        ], className="mb-3"),
-
-        # ----- v3.7: disappointment + consider Likerts -----
+        # ----- broader-impacts Likert -----
+        # (v3.X-fix-7 added an E.ON Q11 fairness Likert above this block;
+        # v3.X-fix-8 removed it — the question overlapped conceptually
+        # with q6_fairness_pref on the final survey.)
         html.Hr(),
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "Looking at how much the three options would actually save "
-                    "you, how does this compare to what you expected before "
-                    "seeing your own profile?"
+                    "Now that you've seen how VECs affect policy, the grid, "
+                    "and the environment, has this changed your view about "
+                    "joining one?"
                 ),
                 dcc.RadioItems(
-                    id="step6-expectation-vs-reality",
+                    id="step6-broader-impacts-shift",
                     options=[
-                        {"label": "1 — Much less than I expected",  "value": 1},
-                        {"label": "2 — Less than I expected",       "value": 2},
-                        {"label": "3 — About what I expected",      "value": 3},
-                        {"label": "4 — More than I expected",       "value": 4},
-                        {"label": "5 — Much more than I expected",  "value": 5},
-                    ],
-                    value=None,
-                    labelStyle={"display": "block", "padding": "0.3rem 0"},
-                ),
-            ]),
-        ], className="mb-3"),
-
-        dbc.Card([
-            dbc.CardBody([
-                html.H4(
-                    "Now that you've seen the comparison, would you consider "
-                    "joining a VEC?"
-                ),
-                dcc.RadioItems(
-                    id="step6-consider-willingness",
-                    options=[
-                        {"label": "1 — Definitely not",   "value": 1},
-                        {"label": "2 — Probably not",     "value": 2},
-                        {"label": "3 — Maybe",            "value": 3},
-                        {"label": "4 — Probably yes",     "value": 4},
-                        {"label": "5 — Definitely yes",   "value": 5},
+                        {"label": "1 — It made me much less interested",   "value": 1},
+                        {"label": "2 — It made me a bit less interested",  "value": 2},
+                        {"label": "3 — No change",                          "value": 3},
+                        {"label": "4 — It made me a bit more interested",  "value": 4},
+                        {"label": "5 — It made me much more interested",   "value": 5},
                     ],
                     value=None,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
@@ -305,7 +307,7 @@ def step6_layout(session_id: str | None):
         dbc.Row([
             dbc.Col(
                 dbc.Button(
-                    "Next → Broader impacts",
+                    "Next → Final survey",
                     id="step6-next-btn",
                     color="primary",
                     disabled=True,
@@ -314,11 +316,8 @@ def step6_layout(session_id: str | None):
             ),
         ], justify="end"),
 
-        # /dash/step7 lives within the Dash mount, so this could in
-        # principle ride on the root url Location's pathname. We keep a
-        # dedicated refresh=True Location for symmetry with Step 4 (whose
-        # downstream /step5 is outside the Dash mount and DOES need the
-        # full reload). Either works for /dash/step7.
+        # /dash/step7 lives within the Dash mount; refresh=True is kept
+        # for symmetry with the Step 3/5 redirect Locations.
         dcc.Location(id="step6-redirect", refresh=True),
     ])
 
@@ -327,38 +326,38 @@ def step6_layout(session_id: str | None):
 
 @dash_app.callback(
     Output("step6-next-btn", "disabled"),
-    Input("step6-expectation-vs-reality", "value"),
-    Input("step6-consider-willingness", "value"),
+    Input("step6-broader-impacts-shift", "value"),
 )
-def toggle_step6_next(q1, q2):
-    """Lock Next until both Likert questions are answered."""
-    return q1 is None or q2 is None
+def toggle_step6_next(v):
+    """Lock Next until the Likert is picked.
+
+    (v3.X-fix-7 briefly added a fairness Likert co-gate; fix-8 reverted
+    that — only the broader-impacts shift Likert remains.)
+    """
+    return v is None
 
 
 @dash_app.callback(
     Output("step6-redirect", "href"),
     Output("step6-error", "children"),
     Input("step6-next-btn", "n_clicks"),
-    State("step6-expectation-vs-reality", "value"),
-    State("step6-consider-willingness", "value"),
+    State("step6-broader-impacts-shift", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step6(n_clicks, q1, q2, search):
-    """Persist Q6-1 onto survey_responses + Q6-2 as round-2 willingness, nav to Step 7."""
+def submit_step6(n_clicks, q, search):
+    """Upsert Q (broader-impacts shift) onto survey_responses, then nav
+    to /dash/step7."""
     if not n_clicks:
         return no_update, no_update
 
     session_id = _parse_session_id(search)
     if not session_id:
         return no_update, "Session id missing — please start from '/'."
-    if q1 is None or q2 is None:
-        return no_update, "Please answer both questions."
+    if q is None:
+        return no_update, "Please select an option."
 
-    from vec_platform.models import (
-        Session as SessionModel,
-        WillingnessMeasurement,
-    )
+    from vec_platform.models import Session as SessionModel
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
 
     db = SessionLocal()
@@ -367,30 +366,11 @@ def submit_step6(n_clicks, q1, q2, search):
         if sess is None:
             return no_update, "Session not found."
 
-        # Q6-1: upsert disappointment Likert onto the per-session survey row.
         row = get_or_create_survey_row(db, session_id)
-        row.step6_expectation_vs_reality = int(q1)
+        row.step6_broader_impacts_shift = int(q)
 
-        # Q6-2: Phase 3.2b's willingness_measurements table holds three
-        # measurements per session (info_calibration / Step 6 / Step 8).
-        # Defensive idempotency: skip the insert if a round=2 row already
-        # exists for this session, so a double-click doesn't double-insert.
-        existing = (
-            db.query(WillingnessMeasurement)
-            .filter(
-                WillingnessMeasurement.session_id == session_id,
-                WillingnessMeasurement.round == 2,
-            )
-            .first()
-        )
-        if existing is None:
-            db.add(WillingnessMeasurement(
-                session_id=session_id,
-                round=2,
-                scale_type="5point_consider",
-                value=int(q2),
-            ))
-
+        # Phase 4-A: advance to current_step=7 (final survey is "Step 7"
+        # in the new 7-step flow).
         if sess.current_step is None or sess.current_step < 7:
             sess.current_step = 7
         db.commit()

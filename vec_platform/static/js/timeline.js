@@ -724,7 +724,9 @@
           })),
         });
 
-        window.location.href = `/dash/step4?session_id=${state.sessionId}`;
+        // Phase 4-A: prices Dash page renamed step4 → step3 in the
+        // 7-step flow. URL preserved scheme stays under /dash/.
+        window.location.href = `/dash/step3?session_id=${state.sessionId}`;
       } catch (err) {
         console.error(err);
         showError("Something went wrong while saving your choices. Please try again.");
@@ -735,12 +737,17 @@
   }
 
   function renderProgressBar() {
-    const steps = ["1. Role", "2. Profile", "3. Customize", "4. Prices",
-                   "5. Respond", "6. Compare", "7. Impacts", "8. Survey"];
+    // Phase 4-A: 7-step flow (Step 0 + Steps 1..7). The customize page
+    // is Step 2 — active here. Mirrors pages/_helpers.py::make_progress
+    // so static HTML and Dash pages render identical progress bars.
+    const steps = ["0. Welcome", "1. Role", "2. Customize", "3. Prices",
+                   "4. Respond", "5. Compare", "6. Impacts", "7. Survey"];
+    const ACTIVE = 2;
     const el = $("progress-bar");
     el.innerHTML = steps.map((label, i) => {
-      const n = i + 1;
-      const cls = n < 3 ? "bg-success" : n === 3 ? "bg-primary" : "bg-secondary";
+      const cls = i < ACTIVE ? "bg-success"
+                : i === ACTIVE ? "bg-primary"
+                : "bg-secondary";
       return `<span class="badge ${cls} me-1">${label}</span>`;
     }).join("");
   }

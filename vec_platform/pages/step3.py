@@ -1,11 +1,15 @@
-"""Step 4 — tomorrow's VEC shadow prices + savings card + 2 RadioItems Qs.
+"""Step 3 — tomorrow's VEC shadow prices + savings card + 2 RadioItems Qs.
+
+Phase 4-A: renumbered from Step 4 (8-step flow) to Step 3 (7-step flow).
+File renamed step4.py → step3.py; identifiers, DB column names, and UI
+labels updated accordingly. The static respond page URL (/step5) is
+preserved per the Phase 4-A decision matrix.
 
 Lazily creates the ShadowPrices row on first visit, then reads no_vec /
-vec_no_adjust bills to drive a side-by-side savings card. Phase 3.5 added
-two intent questions ("would you shift?" / "manual vs automation?") at
-the bottom; submitting them upserts step4_q1_shift_intent +
-step4_q2_control_pref onto the per-session survey_responses row and
-navigates to /step5.
+vec_no_adjust bills to drive a side-by-side savings card. Two intent
+questions ("would you shift?" / "manual vs automation?") at the bottom;
+submitting them upserts step3_q1_shift_intent + step3_q2_control_pref
+onto the per-session survey_responses row and navigates to /step5.
 
 Importing this module registers two Dash callbacks against ``dash_app``.
 """
@@ -22,7 +26,7 @@ from vec_platform.runtime import SessionLocal, calculation_engine, dash_app
 from vec_platform.pages._helpers import _slot_to_hour, _parse_session_id
 
 
-# ==================== Step 4 ====================
+# ==================== Step 3 ====================
 
 def _get_or_create_shadow_prices(db, session_id: str):
     """Return the session's ShadowPrices row, creating it via the engine if absent."""
@@ -42,7 +46,13 @@ def _get_or_create_shadow_prices(db, session_id: str):
 
 
 def _pick_bill(db, session_id: str, scenario: str):
-    """Prefer the Step 3 (customized) bill; fall back to the Step 2 baseline."""
+    """Prefer the customized bill (daily_profiles.step=3); fall back to
+    the auto-generated baseline (daily_profiles.step=2).
+
+    Phase 4-A: data step values are preserved (decision 2a), so the
+    filter still queries step=3 even though "Step 3" in the user-facing
+    flow now points to this prices page.
+    """
     from vec_platform.models import BillBreakdown
 
     q = db.query(BillBreakdown).filter(
@@ -161,7 +171,7 @@ def _savings_card(bill_no_vec, bill_vec) -> dbc.Card:
             ]),
             html.Small(
                 "VEC membership already discounts your energy cost even if you "
-                "don't shift when you use power. In Step 5 you'll see how much "
+                "don't shift when you use power. In Step 4 you'll see how much "
                 "more you can save by shifting flexible loads into the cheap "
                 "midday window.",
                 className="d-block text-muted mt-2",
@@ -198,10 +208,10 @@ def _about_vec_card() -> dbc.Card:
     ])
 
 
-def step4_layout(session_id: str | None):
+def step3_layout(session_id: str | None):
     if not session_id:
         return html.Div([
-            html.H2("Step 4: Tomorrow's community energy prices"),
+            html.H2("Step 3: Tomorrow's community energy prices"),
             dbc.Alert("No session found. Please start from Step 1.", color="warning"),
         ])
 
@@ -215,9 +225,9 @@ def step4_layout(session_id: str | None):
 
     if bill_no_vec is None or bill_vec is None:
         return html.Div([
-            html.H2("Step 4: Tomorrow's community energy prices"),
+            html.H2("Step 3: Tomorrow's community energy prices"),
             dbc.Alert(
-                "No bill found. Please complete Step 1–3 first.",
+                "No bill found. Please complete Step 1–2 first.",
                 color="warning",
             ),
         ])
@@ -228,7 +238,7 @@ def step4_layout(session_id: str | None):
     feed_in = json.loads(shadow.feed_in_price)
 
     return html.Div([
-        html.H2("Step 4: Tomorrow's community energy prices"),
+        html.H2("Step 3: Tomorrow's community energy prices"),
         html.P(
             "Every day the VEC publishes internal prices that reflect how much "
             "solar and battery capacity the community expects to have. Here are "
@@ -254,7 +264,7 @@ def step4_layout(session_id: str | None):
             dbc.Col(_about_vec_card(), md=6),
         ], className="mb-3"),
 
-        # ----- v3.5: two intent questions -----
+        # ----- intent questions -----
         html.Hr(),
         dbc.Card([
             dbc.CardBody([
@@ -263,7 +273,7 @@ def step4_layout(session_id: str | None):
                     "shifting your electricity use to cheaper hours?"
                 ),
                 dcc.RadioItems(
-                    id="step4-q1-shift-intent",
+                    id="step3-q1-shift-intent",
                     options=[
                         {"label": "Yes, I'd actively try to shift", "value": "yes"},
                         {"label": "Maybe, depending on convenience", "value": "maybe"},
@@ -283,7 +293,7 @@ def step4_layout(session_id: str | None):
                     "best prices, would you prefer:"
                 ),
                 dcc.RadioItems(
-                    id="step4-q2-control-pref",
+                    id="step3-q2-control-pref",
                     options=[
                         {"label": "Manual control — I'll decide when to use what",
                          "value": "manual"},
@@ -295,7 +305,7 @@ def step4_layout(session_id: str | None):
                     value=None,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
                 ),
-                html.Div(id="step4-error", className="text-danger small mt-2"),
+                html.Div(id="step3-error", className="text-danger small mt-2"),
             ]),
         ], className="mb-3"),
 
@@ -303,7 +313,7 @@ def step4_layout(session_id: str | None):
             dbc.Col(
                 dbc.Button(
                     "Next → Respond to prices",
-                    id="step4-next-btn",
+                    id="step3-next-btn",
                     color="primary",
                     disabled=True,
                 ),
@@ -313,34 +323,35 @@ def step4_layout(session_id: str | None):
 
         # /step5 lives outside the Dash mount; the root url Location has
         # refresh=False, so we use a dedicated refresh=True Location to
-        # force a full browser navigation (same pattern as step3).
-        dcc.Location(id="step4-redirect", refresh=True),
+        # force a full browser navigation. Phase 4-A: URL preserved
+        # (decision 1B keeps the static respond page at /step5).
+        dcc.Location(id="step3-redirect", refresh=True),
     ])
 
 
 # ==================== callbacks ====================
 
 @dash_app.callback(
-    Output("step4-next-btn", "disabled"),
-    Input("step4-q1-shift-intent", "value"),
-    Input("step4-q2-control-pref", "value"),
+    Output("step3-next-btn", "disabled"),
+    Input("step3-q1-shift-intent", "value"),
+    Input("step3-q2-control-pref", "value"),
 )
-def toggle_step4_next(q1, q2):
+def toggle_step3_next(q1, q2):
     """Lock Next until both intent questions are answered."""
     return q1 is None or q2 is None
 
 
 @dash_app.callback(
-    Output("step4-redirect", "href"),
-    Output("step4-error", "children"),
-    Input("step4-next-btn", "n_clicks"),
-    State("step4-q1-shift-intent", "value"),
-    State("step4-q2-control-pref", "value"),
+    Output("step3-redirect", "href"),
+    Output("step3-error", "children"),
+    Input("step3-next-btn", "n_clicks"),
+    State("step3-q1-shift-intent", "value"),
+    State("step3-q2-control-pref", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step4(n_clicks, q1, q2, search):
-    """Upsert the two step4_* fields onto survey_responses, then nav to /step5."""
+def submit_step3(n_clicks, q1, q2, search):
+    """Upsert the two step3_* fields onto survey_responses, then nav to /step5."""
     if not n_clicks:
         return no_update, no_update
 
@@ -360,11 +371,13 @@ def submit_step4(n_clicks, q1, q2, search):
             return no_update, "Session not found."
 
         row = get_or_create_survey_row(db, session_id)
-        row.step4_q1_shift_intent = q1
-        row.step4_q2_control_pref = q2
+        row.step3_q1_shift_intent = q1
+        row.step3_q2_control_pref = q2
 
-        if sess.current_step is None or sess.current_step < 5:
-            sess.current_step = 5
+        # Phase 4-A: advance current_step to 4 (next page is /step5
+        # respond, which is "Step 4" in the new 7-step flow).
+        if sess.current_step is None or sess.current_step < 4:
+            sess.current_step = 4
         db.commit()
     finally:
         db.close()

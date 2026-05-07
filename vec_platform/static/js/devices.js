@@ -102,8 +102,9 @@ const DEVICE_CATALOG = {
 //   stripInstanceSuffix('cooking#1') -> 'cooking'
 //   stripInstanceSuffix('cooking#2') -> 'cooking'
 //   stripInstanceSuffix('base_load') -> 'base_load'
-// Mirrors pages/step2.py::_base_device_name on the backend so both ends
-// strip suffixes the same way.
+// Phase 4-A: the original Python helper (pages/step2.py::_base_device_name)
+// was removed when the mock-baseline Step 2 page was deleted. This JS
+// stripper is now the canonical implementation.
 function stripInstanceSuffix(name) {
   return name.split("#", 1)[0];
 }

@@ -488,24 +488,26 @@
     const traces = [
       {
         x, y: state.step2NetLoad,
-        name: "Step 2 — baseline",
+        name: "Baseline",
         mode: "lines",
         line: { color: "#adb5bd", width: 1.5, dash: "dash" },
         hovertemplate: "%{y:.2f} kW<extra>Baseline</extra>",
       },
       {
         x, y: state.step3NetLoad,
-        name: "Step 3 — your first pass",
+        // Phase 4-A: customize is Step 2 in the new 7-step flow.
+        name: "Step 2 — your first pass",
         mode: "lines",
         line: { color: "#3498db", width: 2 },
-        hovertemplate: "%{y:.2f} kW<extra>Step 3</extra>",
+        hovertemplate: "%{y:.2f} kW<extra>First pass</extra>",
       },
       {
         x, y: netNow,
-        name: "Step 5 — after responding",
+        // Phase 4-A: respond is Step 4 in the new 7-step flow.
+        name: "Step 4 — after responding",
         mode: "lines",
         line: { color: "#27ae60", width: 2.5 },
-        hovertemplate: "%{y:.2f} kW<extra>Step 5 live</extra>",
+        hovertemplate: "%{y:.2f} kW<extra>Live</extra>",
       },
     ];
 
@@ -790,23 +792,32 @@
           }),
         });
 
-        window.location.href = `/dash/step6?session_id=${state.sessionId}`;
+        // Phase 4-A: compare Dash page renamed step6 → step5 in the
+        // 7-step flow.
+        window.location.href = `/dash/step5?session_id=${state.sessionId}`;
       } catch (err) {
         console.error(err);
         showError("Something went wrong while saving. Please try again.");
         btn.disabled = false;
-        btn.textContent = "Confirm → Step 6";
+        // Phase 4-A: next page (compare) is Step 5 in the new 7-step
+        // flow (was Step 6).
+        btn.textContent = "Confirm → Step 5";
       }
     });
   }
 
   function renderProgressBar() {
-    const steps = ["1. Role", "2. Profile", "3. Customize", "4. Prices",
-                   "5. Respond", "6. Compare", "7. Impacts", "8. Survey"];
+    // Phase 4-A: 7-step flow (Step 0 + Steps 1..7). The respond page
+    // is Step 4 — active here. Mirrors pages/_helpers.py::make_progress
+    // so static HTML and Dash pages render identical progress bars.
+    const steps = ["0. Welcome", "1. Role", "2. Customize", "3. Prices",
+                   "4. Respond", "5. Compare", "6. Impacts", "7. Survey"];
+    const ACTIVE = 4;
     const el = $("progress-bar");
     el.innerHTML = steps.map((label, i) => {
-      const n = i + 1;
-      const cls = n < 5 ? "bg-success" : n === 5 ? "bg-primary" : "bg-secondary";
+      const cls = i < ACTIVE ? "bg-success"
+                : i === ACTIVE ? "bg-primary"
+                : "bg-secondary";
       return `<span class="badge ${cls} me-1">${label}</span>`;
     }).join("");
   }

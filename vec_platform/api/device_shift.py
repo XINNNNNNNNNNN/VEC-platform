@@ -37,10 +37,17 @@ class DeviceShiftCreate(BaseModel):
     prior_expectation_pct: Optional[float] = None
     confidence: Optional[int] = None
 
-    # v3.6 piggyback fields. Step 5's confirm flow collects a counter-
-    # factual ("if savings were 2x, would you shift more?") and a
-    # perceived-effort question. Same first-shift-only pattern; backend
-    # upserts into survey_responses when step == 5 and both are present.
+    # v3.6 piggyback fields. The respond page's confirm flow collects a
+    # counter-factual ("if savings were 2x, would you shift more?") and
+    # a perceived-effort question. Same first-shift-only pattern;
+    # backend upserts into survey_responses when step == 5 and both are
+    # present.
+    #
+    # Phase 4-A: DB columns renamed step5_* → step4_* (the respond page
+    # is now Step 4 in the 7-step flow). The wire field names retained
+    # the step5_* prefix because they're keyed by the data.step value
+    # (still =5 per decision 2a), and the JS const STEP=5 in step5.js
+    # is preserved per decision 1B. Mapping happens server-side below.
     step5_q1_counterfactual: Optional[str] = None  # 'yes' / 'no' / 'maybe'
     step5_q2_effort: Optional[str] = None
     # ^ 'easy' / 'acceptable' / 'disruptive' / 'none'
@@ -107,11 +114,13 @@ def create_device_shift(
                 confidence=int(data.confidence),
             ))
 
-    # v3.6: piggyback the counterfactual + effort answers from Step 5's
-    # confirm flow. Same idempotent pattern: only writes when step == 5,
-    # both fields are sent, and the row doesn't already have step5_*
-    # filled — defends against the frontend accidentally sending the
-    # fields on multiple shift calls.
+    # v3.6 / Phase 4-A: piggyback the counterfactual + effort answers
+    # from the respond page's confirm flow. Same idempotent pattern:
+    # only writes when step == 5 (preserved data step value), both
+    # fields are sent, and the row doesn't already have the columns
+    # filled. The wire field names use step5_* but the DB columns are
+    # step4_* (renamed in Phase 4-A; the respond page is "Step 4" in
+    # the 7-step flow).
     if (
         data.step == 5
         and data.step5_q1_counterfactual is not None
@@ -119,9 +128,9 @@ def create_device_shift(
     ):
         from vec_platform.pages._survey_helpers import get_or_create_survey_row
         row = get_or_create_survey_row(db, data.session_id)
-        if row.step5_q1_counterfactual is None and row.step5_q2_effort is None:
-            row.step5_q1_counterfactual = data.step5_q1_counterfactual
-            row.step5_q2_effort = data.step5_q2_effort
+        if row.step4_q1_counterfactual is None and row.step4_q2_effort is None:
+            row.step4_q1_counterfactual = data.step5_q1_counterfactual
+            row.step4_q2_effort = data.step5_q2_effort
 
     db.commit()
     db.refresh(shift)
