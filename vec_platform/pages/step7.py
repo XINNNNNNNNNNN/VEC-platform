@@ -234,9 +234,23 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
     """Full survey form. Expert block visibility is decided by the caller
     (step7_layout) — v3.X-fix-9 derives ``is_expert`` from
     ``sessions.vec_familiarity ∈ _EXPERT_FAMILIARITY_GATE`` instead of
-    the former ``sessions.expertise == 'expert'`` self-label."""
+    the former ``sessions.expertise == 'expert'`` self-label.
 
-    expert = _expert_block() if is_expert else []
+    Phase 4-A-fix-1: the expert block is *always* rendered into the
+    DOM, but the wrapper html.Div is CSS-hidden (display:none) for
+    non-expert sessions. Pre-fix-1 the three widgets were conditionally
+    appended — that caused submit_survey's State refs to
+    ``step7-expert-q1-realism`` / ``-q2-barrier`` / ``-q3-comment`` to
+    raise Dash ReferenceError for the (vec_familiarity ≤ 3) majority,
+    silently dropping the Submit click. Same pattern as fix-14 in
+    step1.py: always-in-DOM keeps the callback graph valid; the schema
+    is nullable so the None values that flow in for hidden experts are
+    persisted unchanged."""
+
+    expert_block_wrapper = html.Div(
+        _expert_block(),
+        style={} if is_expert else {"display": "none"},
+    )
 
     return html.Div(id="step7-form", children=[
         # ----- Q1-Q3 baseline (v3.X-fix-8: original Q2 was merged into
@@ -303,8 +317,9 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
             "step7-final-willingness", _FINAL_WILLINGNESS_OPTIONS,
         ),
 
-        # ----- expert block (conditional) -----
-        *expert,
+        # ----- expert block (Phase 4-A-fix-1: always-in-DOM wrapper,
+        # CSS-hidden for non-experts) -----
+        expert_block_wrapper,
 
         # ----- v3.X-fix-7 / fix-8: E.ON Q13 drivers top-3 (also serves
         # as the merged Q2_reasons question) -----
