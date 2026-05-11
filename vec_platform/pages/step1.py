@@ -72,12 +72,35 @@ def step1_layout(session_id: str | None = None):
     # effect. The high-familiarity subset is still asked, preserving the
     # backward-compat comparison with the legacy expertise self-label.
     show_occupation = False
+    # Phase F: if the participant is editing Step 1 after having
+    # generated any downstream data (customize / respond / survey
+    # rows), warn them up-front that pressing Next will wipe that
+    # later progress. Same detection predicate as submit_step1's
+    # cascade-delete trigger.
+    has_downstream = False
     if session_id:
-        from vec_platform.models import Session as SessionModel
+        from vec_platform.models import (
+            Session as SessionModel,
+            DailyProfile,
+            DeviceShift,
+            DragLog,
+            SurveyResponse,
+        )
         db = SessionLocal()
         try:
             sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
             vec_fam = sess.vec_familiarity if sess else None
+            has_downstream = (
+                db.query(DailyProfile)
+                .filter(
+                    DailyProfile.session_id == session_id,
+                    DailyProfile.step.in_((3, 5)),
+                )
+                .first() is not None
+                or db.query(DeviceShift).filter_by(session_id=session_id).first() is not None
+                or db.query(DragLog).filter_by(session_id=session_id).first() is not None
+                or db.query(SurveyResponse).filter_by(session_id=session_id).first() is not None
+            )
         finally:
             db.close()
         show_occupation = vec_fam in _EXPERT_FAMILIARITY_GATE
@@ -122,11 +145,29 @@ def step1_layout(session_id: str | None = None):
         style={} if show_occupation else {"display": "none"},
     )
 
+    # Phase F: warn the participant before they overwrite progress
+    # made in later steps.
+    cascade_warning = (
+        dbc.Alert(
+            [
+                html.Strong("Heads up: "),
+                "you have answers saved in later steps. Pressing "
+                "“Next → Generate my profile” will reset your customize, "
+                "respond, and survey progress so the rest of the flow "
+                "matches whatever you change here.",
+            ],
+            color="warning",
+            className="py-2 small",
+        )
+        if has_downstream else None
+    )
+
     return html.Div([
         html.H2("Step 1: Tell us about your home"),
         html.P("A few quick questions so we can build your typical electricity day."),
 
         session_note,
+        cascade_warning,
 
         dbc.Card([
             dbc.CardBody([
@@ -314,6 +355,13 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
         UserInput,
         DailyProfile,
         BillBreakdown,
+        DeviceShift,
+        DragLog,
+        SurveyResponse,
+        ShadowPrices,
+        PriorExpectation,
+        WillingnessMeasurement,
+        ExitThreshold,
     )
 
     db = SessionLocal()
@@ -336,7 +384,26 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
             session.expertise = expertise
         # else: leave existing value (None for fresh sessions; whatever
         # was there for a re-submit). Don't overwrite with None.
-        session.current_step = 2
+
+        # Phase F: detect downstream data left over from an earlier
+        # walk-through. "Downstream" = anything produced after the
+        # baseline step=2 profile: step=3/5 daily_profiles + bill rows,
+        # device_shifts, drag_logs, shadow_prices, survey_responses,
+        # plus the round=2 prior-expectation, round=2/3 willingness
+        # measurements, and exit_thresholds. The round=1 measurements
+        # are taken *before* Step 1 (welcome page + info-calibration
+        # arm) and are explicitly preserved.
+        has_downstream = (
+            db.query(DailyProfile)
+            .filter(
+                DailyProfile.session_id == session_id,
+                DailyProfile.step.in_((3, 5)),
+            )
+            .first() is not None
+            or db.query(DeviceShift).filter_by(session_id=session_id).first() is not None
+            or db.query(DragLog).filter_by(session_id=session_id).first() is not None
+            or db.query(SurveyResponse).filter_by(session_id=session_id).first() is not None
+        )
 
         # ---- UserInput upsert ----
         # Snapshot the previous has_X state *before* we mutate the row so
@@ -395,11 +462,7 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
         # ---- DailyProfile + BillBreakdown step=2 are recomputed ----
         # The step=2 baseline is a derived view of user_input — the
         # simplest correct behaviour on resubmit is to drop the old
-        # rows and write fresh ones from the updated user_input. This
-        # also keeps the existing engine.generate_profile signature
-        # intact (engine still expects a freshly-constructed instance,
-        # though Phase D-1's recalculate path now reads pv_kwp from
-        # user_input on every call anyway).
+        # rows and write fresh ones from the updated user_input.
         db.query(BillBreakdown).filter(
             BillBreakdown.session_id == session_id,
             BillBreakdown.step == 2,
@@ -408,6 +471,65 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
             DailyProfile.session_id == session_id,
             DailyProfile.step == 2,
         ).delete(synchronize_session=False)
+
+        # Phase F: cascade-delete any downstream data so it can't
+        # diverge from the new baseline. Without this, a participant
+        # who pressed Back after finishing the survey would leave
+        # daily_profiles(step=3/5), device_shifts, etc. populated from
+        # the previous ui state -- making the persisted "what you
+        # customised" rows incompatible with the new step=2 baseline.
+        # We DO NOT touch prior_expectations(round=1) or
+        # willingness_measurements(round=1) because those are
+        # collected before Step 1 (welcome page / info-calibration
+        # arm) and remain valid baseline measurements regardless of
+        # how the participant subsequently edits Step 1.
+        if has_downstream:
+            db.query(BillBreakdown).filter(
+                BillBreakdown.session_id == session_id,
+                BillBreakdown.step.in_((3, 5)),
+            ).delete(synchronize_session=False)
+            db.query(DailyProfile).filter(
+                DailyProfile.session_id == session_id,
+                DailyProfile.step.in_((3, 5)),
+            ).delete(synchronize_session=False)
+            db.query(DeviceShift).filter_by(session_id=session_id).delete(
+                synchronize_session=False
+            )
+            db.query(DragLog).filter_by(session_id=session_id).delete(
+                synchronize_session=False
+            )
+            db.query(SurveyResponse).filter_by(session_id=session_id).delete(
+                synchronize_session=False
+            )
+            db.query(ShadowPrices).filter_by(session_id=session_id).delete(
+                synchronize_session=False
+            )
+            db.query(PriorExpectation).filter(
+                PriorExpectation.session_id == session_id,
+                PriorExpectation.measurement_round == 2,
+            ).delete(synchronize_session=False)
+            db.query(WillingnessMeasurement).filter(
+                WillingnessMeasurement.session_id == session_id,
+                WillingnessMeasurement.round.in_((2, 3)),
+            ).delete(synchronize_session=False)
+            db.query(ExitThreshold).filter_by(session_id=session_id).delete(
+                synchronize_session=False
+            )
+            # The participant is no longer in a "finished" state; they
+            # have invalidated all their later answers.
+            session.completed = False
+            # current_step also goes back to the customize entry point
+            # (matches the post-cascade reality: they have to redo
+            # everything past Step 1).
+            session.current_step = 2
+        else:
+            # Phase F Q1: when no downstream exists, current_step is
+            # only nudged forward to 2, never back. This preserves
+            # progress when the participant idly resubmits Step 1
+            # before they've actually gone anywhere later.
+            if session.current_step is None or session.current_step < 2:
+                session.current_step = 2
+
         db.flush()
 
         profile = calculation_engine.generate_profile(user_input)
