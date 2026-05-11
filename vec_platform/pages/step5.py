@@ -369,11 +369,9 @@ def submit_step5(n_clicks, q1, q2, search):
     if q1 is None or q2 is None:
         return no_update, "Please answer both questions."
 
-    from vec_platform.models import (
-        Session as SessionModel,
-        WillingnessMeasurement,
-    )
+    from vec_platform.models import Session as SessionModel
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
+    from vec_platform.pages._upsert_helpers import upsert_willingness
 
     db = SessionLocal()
     try:
@@ -386,24 +384,16 @@ def submit_step5(n_clicks, q1, q2, search):
         row.step5_expectation_vs_reality = int(q1)
 
         # Q2: willingness_measurements table holds three measurements
-        # per session (info_calibration / Step 5 / Step 7). Defensive
-        # idempotency: skip the insert if a round=2 row already exists
-        # for this session so a double-click doesn't double-insert.
-        existing = (
-            db.query(WillingnessMeasurement)
-            .filter(
-                WillingnessMeasurement.session_id == session_id,
-                WillingnessMeasurement.round == 2,
-            )
-            .first()
+        # per session (info_calibration / Step 5 / Step 7). Phase E:
+        # switched from defensive-idempotency (which silently dropped
+        # the new value on resubmit) to an explicit upsert that records
+        # the participant's latest answer.
+        upsert_willingness(
+            db, session_id,
+            round_=2,
+            scale_type="5point_consider",
+            value=q2,
         )
-        if existing is None:
-            db.add(WillingnessMeasurement(
-                session_id=session_id,
-                round=2,
-                scale_type="5point_consider",
-                value=int(q2),
-            ))
 
         # Phase 4-A: advance to current_step=6 (next page is impacts,
         # which is "Step 6" in the new 7-step flow).

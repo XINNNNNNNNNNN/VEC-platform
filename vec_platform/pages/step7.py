@@ -579,7 +579,6 @@ def submit_survey(n_clicks, q1, q3, q4,
     from vec_platform.models import (
         Session as SessionModel,
         ExitThreshold,
-        WillingnessMeasurement,
     )
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
 
@@ -621,23 +620,18 @@ def submit_survey(n_clicks, q1, q3, q4,
         et.threshold_ratio = float(exit_t)
         et.entry_threshold_pct = float(entry_pct)
 
-        # 3) willingness_measurements round=3. Defensive idempotency:
-        # don't double-insert if a re-submit somehow fires.
-        existing = (
-            db.query(WillingnessMeasurement)
-            .filter(
-                WillingnessMeasurement.session_id == session_id,
-                WillingnessMeasurement.round == 3,
-            )
-            .first()
+        # 3) willingness_measurements round=3. Phase E: switched from
+        # defensive-idempotency to an explicit upsert so a participant
+        # who edits the survey after submitting (or whose double-click
+        # races) sees their latest final-acceptance Likert recorded
+        # instead of the first one being kept and the new one dropped.
+        from vec_platform.pages._upsert_helpers import upsert_willingness
+        upsert_willingness(
+            db, session_id,
+            round_=3,
+            scale_type="4point_accept",
+            value=final_w,
         )
-        if existing is None:
-            db.add(WillingnessMeasurement(
-                session_id=session_id,
-                round=3,
-                scale_type="4point_accept",
-                value=int(final_w),
-            ))
 
         # 4) Mark the session complete. Phase 4-A: current_step=8 means
         # "past Step 7" in the new 7-step flow (matches the historical

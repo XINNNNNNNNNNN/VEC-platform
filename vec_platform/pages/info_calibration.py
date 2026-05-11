@@ -173,22 +173,23 @@ def submit_info_cal(n_clicks, likert_value, search):
     if likert_value is None:
         return no_update, "Please select an option."
 
-    from vec_platform.models import (
-        Session as SessionModel,
-        WillingnessMeasurement,
-    )
+    from vec_platform.models import Session as SessionModel
+    from vec_platform.pages._upsert_helpers import upsert_willingness
 
     db = SessionLocal()
     try:
         sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
         if sess is None:
             return no_update, "Session not found."
-        db.add(WillingnessMeasurement(
-            session_id=session_id,
-            round=1,
+        # Phase E: upsert so a participant pressing Back to info_cal,
+        # changing the Likert, and resubmitting overwrites the round=1
+        # row instead of accumulating duplicates.
+        upsert_willingness(
+            db, session_id,
+            round_=1,
             scale_type="7point_interest",
-            value=int(likert_value),
-        ))
+            value=likert_value,
+        )
         # info_calibration sits between Step 1 and Step 2; the participant
         # is now moving on to Step 2 (customize devices).
         if sess.current_step is None or sess.current_step < 2:

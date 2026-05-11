@@ -89,30 +89,26 @@ def create_device_shift(
     )
     db.add(shift)
 
-    # v3.4: piggyback the second prior-expectation guess from Step 3's
-    # confirm flow. Only writes when step == 3 AND both fields are sent
-    # AND no round=2 row exists yet (idempotent — defends against the
-    # caller accidentally sending the fields on multiple shift calls).
+    # v3.4 / Phase E: piggyback the second prior-expectation guess
+    # from the customize page's confirm flow. Only writes when
+    # step == 3 AND both fields are sent. Pre-Phase E this used a
+    # "skip if existing" guard which silently dropped the new value
+    # on resubmit; now it upserts so the participant's latest answer
+    # is recorded. The piggyback path still fires only on the first
+    # device-shift call per submit, so a typical Next produces a
+    # single upsert.
     if (
         data.step == 3
         and data.prior_expectation_pct is not None
         and data.confidence is not None
     ):
-        existing = (
-            db.query(PriorExpectation)
-            .filter(
-                PriorExpectation.session_id == data.session_id,
-                PriorExpectation.measurement_round == 2,
-            )
-            .first()
+        from vec_platform.pages._upsert_helpers import upsert_prior_expectation
+        upsert_prior_expectation(
+            db, data.session_id,
+            measurement_round=2,
+            pct=data.prior_expectation_pct,
+            confidence=data.confidence,
         )
-        if existing is None:
-            db.add(PriorExpectation(
-                session_id=data.session_id,
-                measurement_round=2,
-                pct=float(data.prior_expectation_pct),
-                confidence=int(data.confidence),
-            ))
 
     # v3.6 / Phase 4-A: piggyback the counterfactual + effort answers
     # from the respond page's confirm flow. Same idempotent pattern:
@@ -128,9 +124,12 @@ def create_device_shift(
     ):
         from vec_platform.pages._survey_helpers import get_or_create_survey_row
         row = get_or_create_survey_row(db, data.session_id)
-        if row.step4_q1_counterfactual is None and row.step4_q2_effort is None:
-            row.step4_q1_counterfactual = data.step5_q1_counterfactual
-            row.step4_q2_effort = data.step5_q2_effort
+        # Phase E: always overwrite. Pre-Phase E this only wrote when
+        # both columns were NULL, which silently dropped a participant's
+        # updated counterfactual / effort answer if they pressed Back to
+        # the respond page and resubmitted.
+        row.step4_q1_counterfactual = data.step5_q1_counterfactual
+        row.step4_q2_effort = data.step5_q2_effort
 
     db.commit()
     db.refresh(shift)

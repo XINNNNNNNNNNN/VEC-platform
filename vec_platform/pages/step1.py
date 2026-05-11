@@ -301,6 +301,21 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
     else:
         expertise = None  # widget hidden or never answered
 
+    # Phase E: upsert pattern. Pressing Back and resubmitting Step 1
+    # used to produce a fresh row in user_inputs + daily_profiles
+    # (step=2) + 3 rows in bill_breakdowns; now we update the existing
+    # row in place. Phase C calibration fields (pv_kwp, bess_kwh,
+    # ev_kwh, load_scale_factor, *_calibrated) are preserved across
+    # resubmits as long as the matching has_X selection is unchanged;
+    # flipping has_X resets the corresponding capacity to its default
+    # so a participant who unchecks PV doesn't leave a stale 15 kWp.
+    from vec_platform.models import (
+        Session as SessionModel,
+        UserInput,
+        DailyProfile,
+        BillBreakdown,
+    )
+
     db = SessionLocal()
     try:
         if session_id:
@@ -323,19 +338,76 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
         # was there for a re-submit). Don't overwrite with None.
         session.current_step = 2
 
-        user_input = UserInput(
-            session_id=session_id,
-            ownership_type=ownership_type,
-            occupation=occupation,  # may be None when Q5 was hidden (fix-10)
-            area_m2=float(area),
-            people=int(people),
-            has_pv=has_pv,
-            pv_kwp=_DEFAULT_PV_KWP if has_pv else None,
-            has_bess=has_bess,
-            bess_kwh=_DEFAULT_BESS_KWH if has_bess else None,
-            has_ev=has_ev,
+        # ---- UserInput upsert ----
+        # Snapshot the previous has_X state *before* we mutate the row so
+        # we can decide whether each DER capacity needs to be reset to
+        # its default (DER added or removed) or preserved (selection
+        # unchanged — Phase C calibration stays put).
+        existing_ui = (
+            db.query(UserInput)
+            .filter(UserInput.session_id == session_id)
+            .first()
         )
-        db.add(user_input)
+        prev_has_pv = existing_ui.has_pv if existing_ui is not None else None
+        prev_has_bess = existing_ui.has_bess if existing_ui is not None else None
+        prev_has_ev = existing_ui.has_ev if existing_ui is not None else None
+
+        if existing_ui is None:
+            user_input = UserInput(session_id=session_id)
+            db.add(user_input)
+        else:
+            user_input = existing_ui
+
+        # Step 1's own fields always reflect the latest submit.
+        user_input.ownership_type = ownership_type
+        user_input.occupation = occupation
+        user_input.area_m2 = float(area)
+        user_input.people = int(people)
+        user_input.has_pv = has_pv
+        user_input.has_bess = has_bess
+        user_input.has_ev = has_ev
+
+        # DER capacity defaults: only touch when has_X transitions or on
+        # first-time creation. Otherwise leave Phase C calibration alone.
+        if prev_has_pv is None:
+            # First-time row — seed defaults the same way pre-Phase E did.
+            user_input.pv_kwp = _DEFAULT_PV_KWP if has_pv else None
+        elif prev_has_pv != has_pv:
+            user_input.pv_kwp = _DEFAULT_PV_KWP if has_pv else None
+            user_input.pv_calibrated = False
+
+        if prev_has_bess is None:
+            user_input.bess_kwh = _DEFAULT_BESS_KWH if has_bess else None
+        elif prev_has_bess != has_bess:
+            user_input.bess_kwh = _DEFAULT_BESS_KWH if has_bess else None
+            user_input.bess_calibrated = False
+
+        # ev_kwh has no Step 1 default (column was nullable from the
+        # start; UI defaults to 60 client-side). On a fresh row leave it
+        # NULL; on a has_ev flip clear the calibrated flag so the
+        # calibration panel re-prompts.
+        if prev_has_ev is not None and prev_has_ev != has_ev:
+            user_input.ev_kwh = None
+            user_input.ev_calibrated = False
+
+        db.flush()
+
+        # ---- DailyProfile + BillBreakdown step=2 are recomputed ----
+        # The step=2 baseline is a derived view of user_input — the
+        # simplest correct behaviour on resubmit is to drop the old
+        # rows and write fresh ones from the updated user_input. This
+        # also keeps the existing engine.generate_profile signature
+        # intact (engine still expects a freshly-constructed instance,
+        # though Phase D-1's recalculate path now reads pv_kwp from
+        # user_input on every call anyway).
+        db.query(BillBreakdown).filter(
+            BillBreakdown.session_id == session_id,
+            BillBreakdown.step == 2,
+        ).delete(synchronize_session=False)
+        db.query(DailyProfile).filter(
+            DailyProfile.session_id == session_id,
+            DailyProfile.step == 2,
+        ).delete(synchronize_session=False)
         db.flush()
 
         profile = calculation_engine.generate_profile(user_input)

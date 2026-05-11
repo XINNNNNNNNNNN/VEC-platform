@@ -201,10 +201,8 @@ def submit_step0(n_clicks, pct, vec_familiarity, search):
     if vec_familiarity is None:
         return no_update, no_update, "Please answer the familiarity question."
 
-    from vec_platform.models import (
-        Session as SessionModel,
-        PriorExpectation,
-    )
+    from vec_platform.models import Session as SessionModel
+    from vec_platform.pages._upsert_helpers import upsert_prior_expectation
 
     db = SessionLocal()
     try:
@@ -213,11 +211,12 @@ def submit_step0(n_clicks, pct, vec_familiarity, search):
             return no_update, no_update, "Session not found — please start from '/'."
 
         sess.vec_familiarity = vec_familiarity
-        db.add(PriorExpectation(
-            session_id=session_id,
-            measurement_round=1,
-            pct=float(pct),
-        ))
+        # Phase E: upsert so pressing Back and resubmitting Step 0 with a
+        # different slider value updates the round=1 row in place instead
+        # of accumulating duplicate rows.
+        upsert_prior_expectation(
+            db, session_id, measurement_round=1, pct=pct,
+        )
         # Advance the bookkeeping cursor to Step 1 (the user is moving off
         # Step 0). Idempotent: don't go backwards if it's already further.
         if sess.current_step is None or sess.current_step < 1:
