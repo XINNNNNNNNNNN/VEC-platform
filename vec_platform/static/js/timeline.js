@@ -193,7 +193,41 @@
       const newStart = VECCompute.wrapStart(startSlotAtPointerDown + dSlots);
       if (newStart !== state.placed[name].start) {
         state.placed[name].start = newStart;
-        block.style.left = `${(state.placed[name].start / SLOTS_PER_DAY) * 100}%`;
+        // Phase 4-A-fix-4: real-time wrap rendering. While the user
+        // drags across midnight, resize the held block to its tail
+        // portion (start -> 24:00) and show a transient "head"
+        // companion at slot 0..headDur so the wrap is visible during
+        // the drag itself, not only on release. Single-segment drags
+        // stay on the existing CSS-only path (no DOM thrash). The
+        // companion is removed once the drag returns to non-wrap;
+        // on pointerup, renderTimeline() rebuilds the row from
+        // scratch and the transient companion is replaced by
+        // makeBlock's permanent two-segment output.
+        const duration = state.placed[name].duration;
+        const wraps = (newStart + duration) > SLOTS_PER_DAY;
+        const row = block.parentElement;
+        let companion = row.querySelector(
+          `[data-drag-companion="${name}"]`
+        );
+        if (wraps) {
+          const tailDur = SLOTS_PER_DAY - newStart;
+          const headDur = duration - tailDur;
+          block.style.left = `${(newStart / SLOTS_PER_DAY) * 100}%`;
+          block.style.width = `${(tailDur / SLOTS_PER_DAY) * 100}%`;
+          if (!companion) {
+            companion = document.createElement("div");
+            companion.className = "device-block device-block-head";
+            companion.dataset.dragCompanion = name;
+            companion.style.background = block.style.background;
+            row.appendChild(companion);
+          }
+          companion.style.left = "0%";
+          companion.style.width = `${(headDur / SLOTS_PER_DAY) * 100}%`;
+        } else {
+          block.style.left = `${(newStart / SLOTS_PER_DAY) * 100}%`;
+          block.style.width = `${(duration / SLOTS_PER_DAY) * 100}%`;
+          if (companion) companion.remove();
+        }
         updateBlockLabel(block, name);
         refreshChartAndBill();
       }

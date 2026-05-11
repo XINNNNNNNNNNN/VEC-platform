@@ -207,7 +207,39 @@
       const newStart = VECCompute.wrapStart(startSlotAtPointerDown + dSlots);
       if (newStart !== state.placed[name].start) {
         state.placed[name].start = newStart;
-        block.style.left = `${(state.placed[name].start / SLOTS_PER_DAY) * 100}%`;
+        // Phase 4-A-fix-4: real-time wrap rendering (mirrors
+        // timeline.js — keep both pages visually identical during
+        // drag). Resize the held block to its tail and show a
+        // transient head companion while the user is crossing
+        // midnight; remove the companion when the drag returns
+        // to non-wrap. renderTimeline() on pointerup replaces the
+        // transient companion with makeBlock's permanent two-
+        // segment output.
+        const duration = state.placed[name].duration;
+        const wraps = (newStart + duration) > SLOTS_PER_DAY;
+        const row = block.parentElement;
+        let companion = row.querySelector(
+          `[data-drag-companion="${name}"]`
+        );
+        if (wraps) {
+          const tailDur = SLOTS_PER_DAY - newStart;
+          const headDur = duration - tailDur;
+          block.style.left = `${(newStart / SLOTS_PER_DAY) * 100}%`;
+          block.style.width = `${(tailDur / SLOTS_PER_DAY) * 100}%`;
+          if (!companion) {
+            companion = document.createElement("div");
+            companion.className = "device-block device-block-head";
+            companion.dataset.dragCompanion = name;
+            companion.style.background = block.style.background;
+            row.appendChild(companion);
+          }
+          companion.style.left = "0%";
+          companion.style.width = `${(headDur / SLOTS_PER_DAY) * 100}%`;
+        } else {
+          block.style.left = `${(newStart / SLOTS_PER_DAY) * 100}%`;
+          block.style.width = `${(duration / SLOTS_PER_DAY) * 100}%`;
+          if (companion) companion.remove();
+        }
         updateBlockLabel(block, name);
         refreshChart();
         updateDeviceCard(name);   // live-update suggestion chip & range
