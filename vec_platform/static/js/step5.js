@@ -860,4 +860,24 @@
     setupButtons();
     loadInitial();
   });
+
+  // Phase J: BFCache restore. Mirrors timeline.js — when the user
+  // presses Back from /dash/step5 (compare page) the browser may
+  // serve /step5 from BFCache with btn-confirm stuck at "Saving…"
+  // disabled. Reset transient submit-cycle UI on BFCache restore.
+  // Unlike timeline.js we DO call updateConfirmEnabled() here because
+  // step5 already exposes a public disable-state evaluator — that
+  // restores correct disabled state based on counterfactual answers
+  // + willingness selections preserved by BFCache, without forcing
+  // the button enabled on an incomplete form.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    const btn = document.getElementById("btn-confirm");
+    if (btn) btn.textContent = "Confirm → Step 5";
+    const err = document.getElementById("step5-cf-error");
+    if (err) err.textContent = "";
+    if (typeof updateConfirmEnabled === "function") {
+      updateConfirmEnabled();
+    }
+  });
 })();

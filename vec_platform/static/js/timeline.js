@@ -1052,4 +1052,27 @@
     setupButtons();
     loadInitial();
   });
+
+  // Phase J: BFCache restore. When the user presses Back from /dash/step3
+  // (prices page) the browser may serve /step3 from BFCache, which
+  // preserves the DOM verbatim including the transient "Saving…" +
+  // disabled state that the Next click handler set just before
+  // navigating away. DOMContentLoaded does NOT fire on BFCache restore,
+  // so the bootstrap above never re-runs and the button stays stuck.
+  //
+  // Reset only the transient submit-cycle UI here: button label back to
+  // its HTML default and the error banner cleared. We deliberately do
+  // NOT force btn.disabled=false — the confidence-radio change handler
+  // (setupQuestionControls) already drives that based on whether the
+  // confidence Likert has been answered, and BFCache preserves the
+  // radio's checked state, so the disable-toggle will fire correctly
+  // on the participant's next interaction. Forcing enabled here would
+  // let an empty form be submitted.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    const btn = document.getElementById("btn-confirm");
+    if (btn) btn.textContent = "Next";
+    const err = document.getElementById("step3-error");
+    if (err) err.textContent = "";
+  });
 })();
