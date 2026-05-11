@@ -20,16 +20,69 @@ const VECCompute = (() => {
 
   // Detect the start/duration of the single non-zero run inside a 96-slot
   // array. Returns null if the array is all-zero.
+  //
+  // Phase 4-A-fix-2: wrap-aware. A device whose configured run crosses
+  // midnight (e.g. cooking 22:00-02:00) leaves a non-zero block at
+  // both ends of the array and a zero gap in the middle. The previous
+  // implementation walked left→right tracking first and last non-zero
+  // index, returning {start: 0, duration: 96} for such inputs — which
+  // downstream rendered as a full-width single block instead of the
+  // expected two-segment view, both on /step3 strong-refresh restore
+  // and the entire /step5 timeline.
+  //
+  // The fix: when both the first and last slot are non-zero we are
+  // looking at a wrap. Find the largest zero-gap; the slot just after
+  // the gap is the run's start, and duration = N − gap_length. Normal
+  // (no-wrap), all-zero, full-24h, and single-slot inputs each take a
+  // dedicated branch to keep the geometry obvious.
   function extractBounds(arr) {
-    let start = -1, end = -1;
-    for (let i = 0; i < arr.length; i++) {
-      if (arr[i] > 0) {
-        if (start === -1) start = i;
-        end = i + 1;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const N = arr.length;
+
+    let nonZeroCount = 0;
+    for (let i = 0; i < N; i++) if (arr[i] > 0) nonZeroCount++;
+    if (nonZeroCount === 0) return null;
+    if (nonZeroCount === N) return { start: 0, duration: N };
+
+    const wraps = arr[0] > 0 && arr[N - 1] > 0;
+
+    if (!wraps) {
+      // Single contiguous run somewhere in the middle.
+      let first = -1, last = -1;
+      for (let i = 0; i < N; i++) {
+        if (arr[i] > 0) {
+          if (first === -1) first = i;
+          last = i;
+        }
+      }
+      return { start: first, duration: last - first + 1 };
+    }
+
+    // Wrap: scan for the longest zero-gap. Because both endpoints are
+    // non-zero, the gap is bounded by non-zero slots on both sides
+    // (i.e. it never runs to either end), so a single left-to-right
+    // pass captures it correctly.
+    let bestGapEnd = -1;
+    let bestGapLen = 0;
+    let curGapStart = -1;
+    for (let i = 0; i < N; i++) {
+      if (arr[i] === 0) {
+        if (curGapStart === -1) curGapStart = i;
+      } else if (curGapStart !== -1) {
+        const len = i - curGapStart;
+        if (len > bestGapLen) {
+          bestGapLen = len;
+          bestGapEnd = i;  // first non-zero after the gap
+        }
+        curGapStart = -1;
       }
     }
-    if (start === -1) return null;
-    return { start, duration: end - start };
+
+    if (bestGapEnd === -1) {
+      // Defensive: should be unreachable given wraps && nonZeroCount<N.
+      return { start: 0, duration: N };
+    }
+    return { start: bestGapEnd, duration: N - bestGapLen };
   }
 
   // `placed` is { name: { start, duration, load_kw } }.
