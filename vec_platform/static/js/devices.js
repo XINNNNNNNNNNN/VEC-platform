@@ -162,6 +162,13 @@ function slotToTimeLabel(slot) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+// Phase 4-A-fix-3: when a device's run crosses midnight (start +
+// duration > SLOTS_PER_DAY), the end-of-window timestamp must wrap
+// modulo 96 so the label reads "20:45–04:45" instead of "20:45–28:45".
+// This is purely a display-side concern — segment widths in makeBlock
+// still use the raw, unwrapped duration so the two-segment render
+// (Phase 3.X-fix-18) keeps the geometry right.
 function rangeLabel(start, duration) {
-  return `${slotToTimeLabel(start)}–${slotToTimeLabel(start + duration)}`;
+  const endSlot = (start + duration) % SLOTS_PER_DAY;
+  return `${slotToTimeLabel(start)}–${slotToTimeLabel(endSlot)}`;
 }
