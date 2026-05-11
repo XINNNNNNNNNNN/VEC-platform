@@ -1074,5 +1074,20 @@
     if (btn) btn.textContent = "Next";
     const err = document.getElementById("step3-error");
     if (err) err.textContent = "";
+    // Phase J-fix-1: dispatch a synthetic change event on the
+    // currently-checked confidence radio so the existing change
+    // handler re-runs btn.disabled = false. Chromium does NOT fire
+    // 'change' when the user clicks a radio that is already checked,
+    // so without this BFCache participants would see "Next" but the
+    // button would stay disabled until they actively switched radios.
+    // If nothing is checked the synthetic dispatch is skipped and
+    // the button correctly stays disabled until the participant
+    // makes a real selection.
+    const checkedConfidence = document.querySelector(
+      'input[name="step3-confidence"]:checked'
+    );
+    if (checkedConfidence) {
+      checkedConfidence.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   });
 })();
