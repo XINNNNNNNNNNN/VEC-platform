@@ -210,6 +210,10 @@ def get_profile(
         "pv_calibrated": pv_calibrated,
         "bess_calibrated": bess_calibrated,
         "ev_calibrated": ev_calibrated,
+        # Phase N F6: surface area_m2 so JS computeBillScenario uses
+        # the same tiered grid fee as the backend, keeping /step3
+        # live preview consistent with /step5 Compare and the DB.
+        "area_m2": (user_input.area_m2 if user_input is not None else None),
     }
 
 
@@ -350,8 +354,10 @@ def recalculate(
     ).delete(synchronize_session=False)
 
     bills = {}
+    # Phase N F6: area_m2 from user_input drives tiered grid_fee.
+    area_m2 = user_input.area_m2 if user_input is not None else None
     for scenario in ("no_vec", "vec_no_adjust", "vec_adjusted"):
-        bill = calculation_engine.calculate_bill(profile, scenario)
+        bill = calculation_engine.calculate_bill(profile, scenario, area_m2=area_m2)
         db.add(bill)
         bills[scenario] = {
             "energy_purchase": bill.energy_purchase,

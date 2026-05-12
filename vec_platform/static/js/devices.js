@@ -14,11 +14,27 @@ const SLOT_HOURS = 0.25;  // 15 min
 const DAYS_PER_MONTH = 30;
 
 // Pricing constants — mirror vec_platform/config.py (SEK).
-const PRICE_RETAIL = 1.5;
-const PRICE_GRID_FEE_MONTHLY = 580;
-const PRICE_TAX = 0.45;
-const PRICE_FEED_IN = 0.95;
+// Phase N F9: PRICE_RETAIL deprecated (K-2 F4 replaced it with the
+// per-slot SE3 retail curve carried via state.spotPrices). Kept for
+// fallback when retailArr is not passed. PRICE_GRID_FEE_MONTHLY
+// removed — flat 580 over-charged apartments and under-charged
+// villas vs Swedish reality; replaced by gridFeeFixed(areaM2) +
+// PRICE_GRID_FEE_VARIABLE_RATE × monthlyKwh (Phase N F6).
+const PRICE_RETAIL = 1.5;  // DEPRECATED fallback
+const PRICE_TAX = 0.428;            // Phase N F8: 2026 SE3 residential
+const PRICE_FEED_IN = 0.40;         // Phase N F7: SE3 utility median
 const PRICE_VEC_INTERNAL_SELL = 1.05;
+
+// Phase N F6: structured grid fee (nätavgift).
+const PRICE_GRID_FEE_VARIABLE_RATE = 0.30;  // SEK/kWh rörlig elöverföring
+
+// Mirror of vec_platform/config.py grid_fee_fixed(area_m2).
+function gridFeeFixed(areaM2) {
+  if (areaM2 == null || areaM2 < 80) return 100;
+  if (areaM2 < 150) return 200;
+  if (areaM2 < 250) return 300;
+  return 450;
+}
 
 // Naming convention sticks with snake_case to match the existing
 // callers in timeline.js + step5.js (default_start / default_duration /

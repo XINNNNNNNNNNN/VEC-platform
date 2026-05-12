@@ -27,6 +27,9 @@
     // to compute the BESS placeholder charge/discharge windows. Fetched
     // alongside the profile.
     spotPrices: null,
+    // Phase N F6: floor area, drives the tiered grid fee (abonnemang)
+    // in computeBillScenario so the live preview matches the backend.
+    areaM2: null,
   };
 
   // ---- DOM helpers ----
@@ -512,8 +515,9 @@
     // Phase K-2 F4: pass the per-slot retail curve so live bill
     // updates while dragging a device reflect the actual cost at
     // each time-of-day, not a flat average.
+    // Phase N F6: also pass areaM2 so grid_fee tier matches backend.
     const bill = VECCompute.computeBillScenario(
-      netLoad, "no_vec", state.spotPrices
+      netLoad, "no_vec", state.spotPrices, state.areaM2
     );
     renderBillCard(bill);
   }
@@ -584,6 +588,10 @@
     state.rawBaseLoad = profile.rigid_load;
     state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
     state.pvGeneration = profile.pv_generation;
+    // Phase N F6: pick up area_m2 so computeBillScenario uses the
+    // same tiered grid fee as the backend. null is acceptable —
+    // gridFeeFixed defaults to the lowest tier (100 SEK).
+    state.areaM2 = profile.area_m2 ?? null;
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
     state.hasBess = !!profile.has_bess;
@@ -633,8 +641,9 @@
     // Original bill for delta comparison: compute from Step 2's net_load directly.
     // Phase K-2 F4: pass the loaded retail curve so the baseline bill
     // uses the same per-slot pricing as the live preview.
+    // Phase N F6: pass areaM2 so grid_fee matches backend tiered fee.
     state.originalBill = VECCompute.computeBillScenario(
-      profile.net_load, "no_vec", state.spotPrices
+      profile.net_load, "no_vec", state.spotPrices, state.areaM2
     );
 
     renderTimeline();
@@ -780,6 +789,9 @@
     state.rawBaseLoad = profile.rigid_load;
     state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
     state.pvGeneration = profile.pv_generation;
+    // Phase N F6: area_m2 cannot change via calibration, but refresh
+    // it defensively in case the server response shape evolved.
+    state.areaM2 = profile.area_m2 ?? state.areaM2;
     // Phase L: re-anchor the "vs. baseline" delta on the calibrated
     // state. Without this, dragging a device after raising PV from 5
     // to 15 would show a saving that includes the calibration delta
@@ -788,8 +800,9 @@
     // response from one-time setup accuracy. The fresh profile here
     // is the post-cascade step=2 row (Phase K-2 fix-1), so its
     // net_load already reflects current calibration.
+    // Phase N F6: pass areaM2 for tiered grid_fee consistency.
     state.originalBill = VECCompute.computeBillScenario(
-      profile.net_load, "no_vec", state.spotPrices
+      profile.net_load, "no_vec", state.spotPrices, state.areaM2
     );
     refreshChartAndBill();
   }

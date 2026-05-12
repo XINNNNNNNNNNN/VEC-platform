@@ -8,7 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from vec_platform.main import get_db, calculation_engine
-from vec_platform.models import Session as SessionModel, DailyProfile, BillBreakdown
+from vec_platform.models import (
+    Session as SessionModel,
+    DailyProfile,
+    BillBreakdown,
+    UserInput,
+)
 
 router = APIRouter()
 
@@ -49,9 +54,18 @@ def create_bill(
     
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    
+
+    # Phase N F6: lookup user_input.area_m2 for the tiered grid fee.
+    user_input = (
+        db.query(UserInput)
+        .filter(UserInput.session_id == data.session_id)
+        .order_by(UserInput.id.desc())
+        .first()
+    )
+    area_m2 = user_input.area_m2 if user_input is not None else None
+
     # Calculate bill
-    bill = calculation_engine.calculate_bill(profile, data.scenario)
+    bill = calculation_engine.calculate_bill(profile, data.scenario, area_m2=area_m2)
     db.add(bill)
     db.commit()
     db.refresh(bill)

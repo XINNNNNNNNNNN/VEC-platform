@@ -86,7 +86,11 @@ def _pick_scenario_bill(db, session_id: str, scenario: str, preferred_step: int)
                 net_load=_json.dumps(net),
                 devices=fresh.devices,
             )
-            return calculation_engine.calculate_bill(profile_view, scenario)
+            # Phase N F6: pass ui.area_m2 so lazy regen matches the
+            # cascade-rewritten DB row and frontend live preview.
+            return calculation_engine.calculate_bill(
+                profile_view, scenario, area_m2=ui.area_m2,
+            )
 
     q = db.query(BillBreakdown).filter(
         BillBreakdown.session_id == session_id,

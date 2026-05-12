@@ -119,7 +119,12 @@ def _cascade_rewrite_step2_baseline(db: Session, ui: UserInput) -> None:
     db.flush()
 
     for scenario in _CASCADE_SCENARIOS:
-        db.add(calculation_engine.calculate_bill(profile_row, scenario))
+        # Phase N F6: area_m2 drives the tiered grid_fee_fixed so the
+        # cascade-rewritten step=2 bill matches what other callers
+        # (step1, recalculate, lazy regen) produce.
+        db.add(calculation_engine.calculate_bill(
+            profile_row, scenario, area_m2=ui.area_m2,
+        ))
 
 
 @router.put("/user_input/calibration")

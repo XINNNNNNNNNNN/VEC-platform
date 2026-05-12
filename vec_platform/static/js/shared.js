@@ -123,7 +123,11 @@ const VECCompute = (() => {
   // bill reduction. When omitted (legacy callers), falls back to flat
   // PRICE_RETAIL so the function stays usable in contexts that don't
   // load /api/shadow-prices.
-  function computeBillScenario(netLoad, scenario, retailArr = null) {
+  // Phase N F6: ``areaM2`` drives the tiered abonnemang (fixed
+  // portion of the grid fee). Default null falls back to the lowest
+  // tier (100 SEK) — callers should pass profile.area_m2 from
+  // /api/profile so the live preview matches the backend.
+  function computeBillScenario(netLoad, scenario, retailArr = null, areaM2 = null) {
     let consumedDaily = 0, exportedDaily = 0;
     let purchaseDaily = 0;
     for (let i = 0; i < netLoad.length; i++) {
@@ -143,7 +147,10 @@ const VECCompute = (() => {
     const exportedMonthly = exportedDaily * DAYS_PER_MONTH;
 
     const energyPurchase = purchaseDaily * DAYS_PER_MONTH;
-    const gridFee = PRICE_GRID_FEE_MONTHLY;
+    // Phase N F6: nätavgift = abonnemang (tier by area) + rörlig
+    // elöverföring (× monthly kWh transmitted).
+    const gridFee = gridFeeFixed(areaM2)
+      + consumedMonthly * PRICE_GRID_FEE_VARIABLE_RATE;
     const tax = consumedMonthly * PRICE_TAX;
 
     let vecDiscount, feedIn;

@@ -47,6 +47,8 @@
       noVec: null,             // Step 3 no_vec baseline (for "without VEC" column)
       vecNoAdjust: null,       // Step 3 vec_no_adjust (for "VEC, same schedule")
     },
+    // Phase N F6: floor area for tiered grid fee in live recompute.
+    areaM2: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -582,8 +584,9 @@
     // Phase K-2 F4: per-slot retail curve so the green "after responding"
     // bill drops when the user shifts loads into cheap (PV-trough) hours.
     const retailArr = state.shadowPrices && state.shadowPrices.retail_price;
+    // Phase N F6: areaM2 for tiered grid_fee, matching backend.
     const adjusted = VECCompute.computeBillScenario(
-      netNow, "vec_adjusted", retailArr
+      netNow, "vec_adjusted", retailArr, state.areaM2
     );
 
     function col(label, value, extraClass = "") {
@@ -639,6 +642,11 @@
     state.step2NetLoad = step2.net_load;
     state.step3NetLoad = step3.net_load;
     state.shadowPrices = shadow;
+    // Phase N F6: floor area drives the tiered grid fee in the live
+    // recompute below (when user toggles willingness, we recompute
+    // bill from current net load — must use same fee structure as
+    // backend). Falls back to step3 area if step2 missing it.
+    state.areaM2 = step2.area_m2 ?? step3.area_m2 ?? null;
     // Phase 3.X-fix-19: gate the Step 5 BESS placeholder row on the
     // same has_bess flag the Step 3 page reads (both come from
     // /api/profile, which fix-18 extended).

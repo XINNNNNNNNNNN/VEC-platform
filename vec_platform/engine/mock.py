@@ -5,14 +5,19 @@ import json
 from vec_platform.engine.base import CalculationEngine
 from vec_platform.models import UserInput, DailyProfile, BillBreakdown, ShadowPrices
 from vec_platform.config import (
-    RETAIL_PRICE_BASE,
-    GRID_FEE_MONTHLY,
     ENERGY_TAX,
     VEC_INTERNAL_BUY,
     VEC_INTERNAL_SELL,
     FEED_IN_PRICE,
+    GRID_FEE_VARIABLE_RATE,
+    grid_fee_fixed,
     SLOTS_PER_DAY,
 )
+# Phase N F9: RETAIL_PRICE_BASE and GRID_FEE_MONTHLY are deprecated
+# (replaced by _SE3_SUMMER_RETAIL_SEK_PER_KWH per-slot curve and the
+# tiered grid_fee_fixed + GRID_FEE_VARIABLE_RATE respectively). Both
+# are intentionally NOT imported above so a stale code path that
+# tries to use them fails at import time, not silently.
 
 DAYS_PER_MONTH = 30
 
@@ -63,7 +68,11 @@ assert len(_SE3_SUMMER_RETAIL_SEK_PER_KWH) == 96, (
 # Mechanical derivations from retail (no time-of-day variation).
 _VEC_INTERNAL_BUY_DISCOUNT = 0.85   # internal_buy = retail × 0.85
 _VEC_INTERNAL_SELL_PRICE   = 1.05   # SEK/kWh, flat
-_FEED_IN_PRICE             = 0.95   # SEK/kWh, flat
+# Phase N F7: kept in sync with config.FEED_IN_PRICE (0.40). This
+# local copy is what get_shadow_prices emits to the UI; if it drifts
+# from config the customize/respond pages would see different numbers
+# from what calculate_bill uses.
+_FEED_IN_PRICE             = 0.40   # SEK/kWh, flat (matches config.FEED_IN_PRICE)
 
 
 class MockEngine(CalculationEngine):
@@ -98,6 +107,7 @@ class MockEngine(CalculationEngine):
         self,
         profile: DailyProfile,
         scenario: str,
+        area_m2: float | None = None,
     ) -> BillBreakdown:
         """Calculate a monthly bill breakdown for one scenario.
 
@@ -140,7 +150,14 @@ class MockEngine(CalculationEngine):
         exported_monthly = exported_daily * DAYS_PER_MONTH
 
         energy_purchase = daily_purchase_sek * DAYS_PER_MONTH
-        grid_fee = GRID_FEE_MONTHLY
+        # Phase N F6: structured grid fee = abonnemang (fixed by main
+        # breaker ampere via area proxy) + rörlig elöverföring (per
+        # kWh transmitted). Replaces flat 580 SEK that previously
+        # over-charged apartments and under-charged large villas.
+        grid_fee = (
+            grid_fee_fixed(area_m2)
+            + consumed_monthly * GRID_FEE_VARIABLE_RATE
+        )
         tax = consumed_monthly * ENERGY_TAX
 
         # ---- PV self-consumption value (informational, F5) ----
