@@ -775,6 +775,17 @@
     state.rawBaseLoad = profile.rigid_load;
     state.baseLoad = applyScale(state.rawBaseLoad, state.scaleFactor);
     state.pvGeneration = profile.pv_generation;
+    // Phase L: re-anchor the "vs. baseline" delta on the calibrated
+    // state. Without this, dragging a device after raising PV from 5
+    // to 15 would show a saving that includes the calibration delta
+    // (≈1267 SEK) on top of the drag-induced saving — contaminating
+    // Layer 1/2/3 research signals that need to isolate behavioural
+    // response from one-time setup accuracy. The fresh profile here
+    // is the post-cascade step=2 row (Phase K-2 fix-1), so its
+    // net_load already reflects current calibration.
+    state.originalBill = VECCompute.computeBillScenario(
+      profile.net_load, "no_vec", state.spotPrices
+    );
     refreshChartAndBill();
   }
 
