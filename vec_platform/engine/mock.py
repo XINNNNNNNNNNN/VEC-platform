@@ -362,7 +362,20 @@ class MockEngine(CalculationEngine):
         # EV charging is intentionally NOT scaled — one EV draws the
         # same charge regardless of household size.
         people = getattr(user_input, "people", None) or 2
+        ownership_type = getattr(user_input, "ownership_type", None)
         flex_scale = 0.6 + 0.2 * max(1, int(people))
+        # Phase N-fix-5: single-occupancy tenant apartments deviate
+        # from the default 2-person template more than the linear
+        # flex_scale captures. Two adjustments:
+        #   A) Dishwasher is absent — only ~20-30% of single-person
+        #      50 m² Swedish apartments have one.
+        #   B) Washing-machine duration is halved beyond flex_scale
+        #      (1-2 cycles/week vs the 2-person 3-4). Implemented by
+        #      a direct _device_block call so it bypasses flex_scale.
+        # Guards are AND-gated on tenant ownership so they cannot
+        # affect any owner-occupied case (villa N-fix-4 calibration
+        # stays intact).
+        single_tenant = (people == 1 and ownership_type == "tenant")
 
         def _scaled_block(start, end, kw):
             dur = end - start
@@ -377,10 +390,19 @@ class MockEngine(CalculationEngine):
             ),
             # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
             "cooking#1": _scaled_block(72, 76, 2.0),       # 18:00-19:00 base, 2 kW
-            # Shiftable wet appliances.
-            "dishwasher#1": _scaled_block(78, 84, 1.2),    # 19:30-21:00 base, 1.2 kW
-            "washing_machine#1": _scaled_block(76, 84, 2.0),  # 19:00-21:00 base, 2.0 kW
         }
+
+        # Phase N-fix-5 A: skip dishwasher for single tenant.
+        if not single_tenant:
+            devices["dishwasher#1"] = _scaled_block(78, 84, 1.2)  # 19:30-21:00 base, 1.2 kW
+
+        # Phase N-fix-5 B: single-tenant washing duration capped at 4
+        # slots (1h) — approximates 1-2 cycles/week vs the 2-person
+        # 3-4. Non-single cases keep the flex_scale-adjusted duration.
+        if single_tenant:
+            devices["washing_machine#1"] = self._device_block(76, 80, 2.0)  # 19:00-20:00, 1h
+        else:
+            devices["washing_machine#1"] = _scaled_block(76, 84, 2.0)  # 19:00-21:00 base, 2.0 kW
 
         # v3 dropped the heating question along with the water_heater device.
 
