@@ -242,7 +242,13 @@ class MockEngine(CalculationEngine):
         """Rigid baseline: fridge/lighting/standby + morning & evening peaks.
 
         Spec (archetype defaults, sized for 75 m² / 2 people):
-          apartment: base 0.3 kW, peak 1.2 kW (06-09, 17-22)
+          apartment: base 0.15 kW, peak 0.6 kW (06-09, 17-22)
+            — Phase N-fix-2: halved from (0.3, 1.2). Sweden's 90%+
+              apartments use district heating; electricity covers
+              lighting + appliances only. Pre-fix value implicitly
+              included an electric-heating component that doesn't
+              exist for renters, producing ~277 kWh/month for a
+              50 m² studio (real summer typical: 100-200).
           villa_pv / villa_pvbess: base 0.5 kW, peak 1.8 kW
           villa_noder: base 0.5 kW, peak 1.5 kW
 
@@ -261,7 +267,9 @@ class MockEngine(CalculationEngine):
         stays comparable.
         """
         if building_type == "apartment":
-            base, peak = 0.3, 1.2
+            # Phase N-fix-2: district-heated apartments (Swedish norm),
+            # not electric-heated. See docstring above.
+            base, peak = 0.15, 0.6
         elif building_type == "villa_noder":
             base, peak = 0.5, 1.5
         else:  # villa_pv, villa_pvbess
