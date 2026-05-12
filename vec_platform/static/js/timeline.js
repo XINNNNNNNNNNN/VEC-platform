@@ -519,12 +519,17 @@
   }
 
   function renderBillCard(bill) {
+    // Phase M: customize is the configuration stage, not the
+    // measurement stage. Showing a "vs. baseline" delta here
+    // pre-anchors participant expectations before the Compare page
+    // (Step 5) — the proper venue for 3-way scenario saving — runs
+    // its willingness measurement. The Step-1-default baseline is
+    // also not semantically meaningful (mixes calibration accuracy
+    // with drag behaviour). Display absolute Net cost only.
+    // state.originalBill is still maintained by loadInitial +
+    // refetchBaselineAndRefresh (Phase L) in case downstream
+    // analysis needs the calibration-aware anchor.
     const el = $("bill-card");
-    const orig = state.originalBill;
-    const delta = orig ? bill.net_cost - orig.net_cost : null;
-    const deltaCls = delta === null ? "" : (delta > 0.5 ? "positive" : delta < -0.5 ? "negative" : "");
-    const deltaStr = delta === null ? "" :
-      `<span class="bill-delta ${deltaCls}">(${delta >= 0 ? "+" : ""}${delta.toFixed(0)} SEK vs. baseline)</span>`;
 
     function row(label, value) {
       return `<div class="bill-row"><span>${label}</span><span>${value.toLocaleString("en-US", { maximumFractionDigits: 0 })} SEK</span></div>`;
@@ -535,7 +540,7 @@
       ${row("Grid fee", bill.grid_fee)}
       ${row("Energy tax", bill.energy_tax)}
       ${row("Feed-in income", -bill.feed_in_income)}
-      <div class="bill-row total"><span>Net cost</span><span>${bill.net_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })} SEK ${deltaStr}</span></div>
+      <div class="bill-row total"><span>Net cost</span><span>${bill.net_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })} SEK</span></div>
       <div class="text-muted small mt-2">Monthly estimate (typical day × 30).</div>
     `;
   }
