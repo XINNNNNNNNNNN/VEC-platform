@@ -131,7 +131,12 @@ const DEVICE_CATALOG = {
     color: "#A855F7",  // purple
     draggable: true,
     default_start: 64,        // 16:00
-    default_duration: 32,     // 8 h
+    // Phase N-fix-4: halved 32 → 16 (8h → 4h). Mirrors engine/mock.py
+    // ev_charger#1 _device_block(64, 80, 3.7). Typical Swedish commuter
+    // EV needs ~9 kWh/day; 4h × 3.7 kW = 14.8 kWh covers that with
+    // headroom while letting overnight slot pricing reward shifting
+    // to the cheap night window if the user drags it.
+    default_duration: 16,     // 4 h
     load_kw: 3.7,
     default_include_when_has_ev: true,
   },

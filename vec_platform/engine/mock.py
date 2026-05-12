@@ -275,8 +275,17 @@ class MockEngine(CalculationEngine):
               included an electric-heating component that doesn't
               exist for renters, producing ~277 kWh/month for a
               50 m² studio (real summer typical: 100-200).
-          villa_pv / villa_pvbess: base 0.5 kW, peak 1.8 kW
-          villa_noder: base 0.5 kW, peak 1.5 kW
+          villa_pv / villa_pvbess: base 0.3 kW, peak 1.0 kW
+          villa_noder: base 0.3 kW, peak 0.9 kW
+            — Phase N-fix-4: halved from (0.5, 1.8) and (0.5, 1.5)
+              respectively. Modern Swedish villas increasingly use
+              heat pumps (COP 3-4) or district heating, leaving the
+              raw electric load to lighting + appliances + summer
+              cooking. The pre-fix archetype implicitly modelled
+              resistive electric heat which is now a small minority
+              of the stock. K-1 R3 (heating-type split as a Step 1
+              option) remains the proper structural fix; halving is
+              the safer default until that lands.
 
         Phase K-2 F2: scale by area_m2 and people. Pre-K-2 these two
         Step 1 inputs were collected but had zero effect on the engine
@@ -297,9 +306,11 @@ class MockEngine(CalculationEngine):
             # not electric-heated. See docstring above.
             base, peak = 0.15, 0.6
         elif building_type == "villa_noder":
-            base, peak = 0.5, 1.5
+            # Phase N-fix-4: halved from (0.5, 1.5).
+            base, peak = 0.3, 0.9
         else:  # villa_pv, villa_pvbess
-            base, peak = 0.5, 1.8
+            # Phase N-fix-4: halved from (0.5, 1.8).
+            base, peak = 0.3, 1.0
 
         # Phase K-2 F2 scaling. Defensive defaults preserve archetype
         # behaviour when called without user_input (e.g. unit tests).
@@ -373,11 +384,15 @@ class MockEngine(CalculationEngine):
 
         # v3 dropped the heating question along with the water_heater device.
 
-        # EV charging late afternoon through midnight (16:00-24:00, 8h).
+        # EV charging late afternoon (16:00-20:00, 4h).
         # Kept non-wrapping so the Step 3 timeline can show it as a single block.
         # Phase N-fix-3: NOT flex-scaled (single vehicle, not per-person).
+        # Phase N-fix-4: duration halved 32→16 slots (8h→4h). Real
+        # Swedish commuter EV draws ~9 kWh/day (50 km × 0.18 kWh/km),
+        # which 4h × 3.7 kW = 14.8 kWh comfortably covers with headroom.
+        # The 8h default was producing 888 kWh/mo (3.3x real ~270).
         if user_input.has_ev:
-            devices["ev_charger#1"] = self._device_block(64, 96, 3.7)
+            devices["ev_charger#1"] = self._device_block(64, 80, 3.7)
 
         return devices
 
