@@ -19,6 +19,7 @@ path already consumes) and ignores ``bess_kwh`` / ``ev_kwh`` /
 ``load_scale_factor``. Phase D will switch the engine over to read
 all four values from this column set.
 """
+import json as _json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,7 +27,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from vec_platform.main import get_db
-from vec_platform.models import UserInput
+from vec_platform.models import BillBreakdown, DailyProfile, UserInput
+from vec_platform.runtime import calculation_engine
 
 router = APIRouter()
 
@@ -49,6 +51,75 @@ _PATCHABLE_FIELDS = (
     "pv_kwp", "bess_kwh", "ev_kwh", "load_scale_factor",
     "pv_calibrated", "bess_calibrated", "ev_calibrated",
 )
+
+# Phase K-2 fix-1: subset of patchable fields whose change actually
+# alters the step=2 baseline numbers. Toggling the *_calibrated flags
+# alone does not need a cascade write — they only record "did the
+# participant actively confirm this value".
+_AFFECTS_BASELINE = ("pv_kwp", "bess_kwh", "ev_kwh", "load_scale_factor")
+
+_CASCADE_SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
+
+
+def _cascade_rewrite_step2_baseline(db: Session, ui: UserInput) -> None:
+    """Phase K-2 fix-1: rebuild daily_profiles + bill_breakdowns step=2.
+
+    /step5 _pick_scenario_bill (Phase K-2 F1) lazy-regenerates step=2
+    bill from the current ``user_inputs`` row on every read, so the
+    frontend Compare card always reflects calibration. The persisted
+    DB rows, however, stayed frozen at Step 1 submit values — a PV
+    calibration from 5 to 15 kWp would leave bill_breakdowns step=2
+    showing the pv_kwp=5 number. SQL audit joining user_inputs to
+    bill_breakdowns would then read inconsistent state.
+
+    This helper rewrites the step=2 baseline so the persisted numbers
+    match what _pick_scenario_bill computes (and what /step3
+    timeline.js displays live). Only step=2 is touched — step=3 and
+    step=5 rows are produced by /api/recalculate and Step 4/5
+    callbacks respectively, and are independent of the baseline.
+
+    ``rigid_load`` is persisted UN-scaled (matches the api/profile.py
+    convention; JS reapplies load_scale_factor). ``net_load`` is the
+    scaled curve so calculate_bill — which integrates net_load against
+    the SE3 retail curve (Phase K-2 F4) — produces the same number
+    /step5 lazy-regen would.
+    """
+    sid = ui.session_id
+
+    db.query(BillBreakdown).filter(
+        BillBreakdown.session_id == sid,
+        BillBreakdown.step == 2,
+    ).delete(synchronize_session=False)
+    db.query(DailyProfile).filter(
+        DailyProfile.session_id == sid,
+        DailyProfile.step == 2,
+    ).delete(synchronize_session=False)
+    db.flush()
+
+    fresh = calculation_engine.generate_profile(ui)
+    scale = float(ui.load_scale_factor or 1.0)
+    rigid_unscaled = _json.loads(fresh.rigid_load)
+    rigid_scaled = [v * scale for v in rigid_unscaled]
+    flex = _json.loads(fresh.flexible_load)
+    pv = _json.loads(fresh.pv_generation)
+    net_scaled = [
+        rigid_scaled[i] + flex[i] - pv[i] for i in range(len(rigid_unscaled))
+    ]
+
+    profile_row = DailyProfile(
+        session_id=sid,
+        step=2,
+        rigid_load=fresh.rigid_load,
+        flexible_load=fresh.flexible_load,
+        pv_generation=fresh.pv_generation,
+        net_load=_json.dumps(net_scaled),
+        devices=fresh.devices,
+    )
+    db.add(profile_row)
+    db.flush()
+
+    for scenario in _CASCADE_SCENARIOS:
+        db.add(calculation_engine.calculate_bill(profile_row, scenario))
 
 
 @router.put("/user_input/calibration")
@@ -86,6 +157,14 @@ def update_calibration(
     if not touched:
         # No fields to patch — short-circuit before commit.
         return {"status": "ok", "touched": []}
+
+    # Phase K-2 fix-1: cascade-rewrite the step=2 baseline so SQL
+    # audit and /step5 lazy regen produce the same numbers. Only
+    # triggered when a capacity / scale field changed; flipping a
+    # *_calibrated flag alone does not alter the profile or bill.
+    if any(f in _AFFECTS_BASELINE for f in touched):
+        db.flush()
+        _cascade_rewrite_step2_baseline(db, ui)
 
     db.commit()
     return {"status": "ok", "touched": touched}
