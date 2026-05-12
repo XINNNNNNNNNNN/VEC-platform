@@ -49,6 +49,8 @@
     },
     // Phase N F6: floor area for tiered grid fee in live recompute.
     areaM2: null,
+    // Phase N-2: ownership_type for villa effekttariff in live recompute.
+    ownershipType: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -585,8 +587,9 @@
     // bill drops when the user shifts loads into cheap (PV-trough) hours.
     const retailArr = state.shadowPrices && state.shadowPrices.retail_price;
     // Phase N F6: areaM2 for tiered grid_fee, matching backend.
+    // Phase N-2: ownershipType for villa effekttariff parity.
     const adjusted = VECCompute.computeBillScenario(
-      netNow, "vec_adjusted", retailArr, state.areaM2
+      netNow, "vec_adjusted", retailArr, state.areaM2, state.ownershipType
     );
 
     function col(label, value, extraClass = "") {
@@ -647,6 +650,9 @@
     // bill from current net load — must use same fee structure as
     // backend). Falls back to step3 area if step2 missing it.
     state.areaM2 = step2.area_m2 ?? step3.area_m2 ?? null;
+    // Phase N-2: ownership_type gates villa effekttariff in the live
+    // recompute. Same fallback chain.
+    state.ownershipType = step2.ownership_type ?? step3.ownership_type ?? null;
     // Phase 3.X-fix-19: gate the Step 5 BESS placeholder row on the
     // same has_bess flag the Step 3 page reads (both come from
     // /api/profile, which fix-18 extended).

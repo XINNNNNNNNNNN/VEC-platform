@@ -11,6 +11,9 @@ from vec_platform.config import (
     FEED_IN_PRICE,
     GRID_FEE_VARIABLE_RATE,
     grid_fee_fixed,
+    EFFEKTTARIFF_DAY_SEK_PER_KW,
+    EFFEKTTARIFF_DAY_START_HOUR,
+    EFFEKTTARIFF_DAY_END_HOUR,
     SLOTS_PER_DAY,
 )
 # Phase N F9: RETAIL_PRICE_BASE and GRID_FEE_MONTHLY are deprecated
@@ -108,6 +111,7 @@ class MockEngine(CalculationEngine):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate a monthly bill breakdown for one scenario.
 
@@ -158,6 +162,28 @@ class MockEngine(CalculationEngine):
             grid_fee_fixed(area_m2)
             + consumed_monthly * GRID_FEE_VARIABLE_RATE
         )
+        # Phase N-2: effekttariff for villa owners (Sweden 2026
+        # mandate, Ellevio SE3 schedule). Tenants pay the building's
+        # shared connection so the peak-kW component does not apply.
+        # Mock simplification: use the day-window hourly peak as a
+        # one-day proxy for the month's top-3-hour average. Shifting
+        # load into the night window (22-06) zeroes the fee — the
+        # exact signal the VEC SP experiment wants to surface.
+        if ownership_type == "owner":
+            hourly_avg_kw = []
+            slots_per_hour = SLOTS_PER_DAY // 24  # 4
+            for hour in range(24):
+                start = hour * slots_per_hour
+                slot_vals = (
+                    max(0.0, net_load[i])
+                    for i in range(start, start + slots_per_hour)
+                )
+                hourly_avg_kw.append(sum(slot_vals) / slots_per_hour)
+            day_peak_kw = max(
+                hourly_avg_kw[EFFEKTTARIFF_DAY_START_HOUR:EFFEKTTARIFF_DAY_END_HOUR],
+                default=0.0,
+            )
+            grid_fee += day_peak_kw * EFFEKTTARIFF_DAY_SEK_PER_KW
         tax = consumed_monthly * ENERGY_TAX
 
         # ---- PV self-consumption value (informational, F5) ----

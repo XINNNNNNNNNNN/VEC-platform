@@ -68,6 +68,25 @@ VEC_INTERNAL_SELL = 1.05
 # Previously 0.95 (~2x reality, inflated PV-owner export value).
 FEED_IN_PRICE = 0.40
 
+# ---- Phase N-2: effekttariff (Swedish 2026 DSO mandate) ----
+# All Swedish DSOs must implement effekttariff (peak-kW fee) by
+# Dec 31 2026. Ellevio rolled out to ~500k villa customers Jan 2026.
+# Values below mirror Ellevio's SE3 villa schedule. Tenants pay the
+# building's shared grid connection so this fee does not apply to
+# them — only owner-occupied dwellings are billed.
+#
+# Platform simplification: real billing uses the average of the
+# month's three highest 1-hour peaks; the mock uses the day's single
+# highest 1-hour peak inside the 06-22 day window, then multiplies
+# by the per-kW rate to produce one month's effekttariff. The night
+# window (22-06) is exempt — shifting load into the night zeroes
+# this component, which is precisely the behavioural signal the SP
+# experiment wants to surface.
+EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25
+EFFEKTTARIFF_NIGHT_SEK_PER_KW = 40.62
+EFFEKTTARIFF_DAY_START_HOUR = 6
+EFFEKTTARIFF_DAY_END_HOUR = 22
+
 # CO2 emission factor (kg/kWh) - Nordic mix
 CO2_FACTOR = 0.045
 

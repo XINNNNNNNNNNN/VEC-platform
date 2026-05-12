@@ -36,6 +36,31 @@ function gridFeeFixed(areaM2) {
   return 450;
 }
 
+// Phase N-2: effekttariff (Swedish 2026 villa peak-kW fee).
+// Mirror of vec_platform/config.py EFFEKTTARIFF_* constants.
+const EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25;
+const EFFEKTTARIFF_DAY_START_HOUR = 6;
+const EFFEKTTARIFF_DAY_END_HOUR = 22;
+
+// Owner-only fee; returns 0 for tenants / unknown.
+// netLoad is the 96-slot kW array; the day-window hourly peak is the
+// same proxy the backend uses (single-day stand-in for monthly
+// top-3-hour average).
+function effekttariffMonthly(netLoad, ownershipType) {
+  if (ownershipType !== "owner" || !Array.isArray(netLoad)) return 0;
+  const slotsPerHour = 4;
+  let peakKw = 0;
+  for (let h = EFFEKTTARIFF_DAY_START_HOUR; h < EFFEKTTARIFF_DAY_END_HOUR; h++) {
+    let s = 0;
+    for (let k = 0; k < slotsPerHour; k++) {
+      s += Math.max(0, netLoad[h * slotsPerHour + k]);
+    }
+    const avg = s / slotsPerHour;
+    if (avg > peakKw) peakKw = avg;
+  }
+  return peakKw * EFFEKTTARIFF_DAY_SEK_PER_KW;
+}
+
 // Naming convention sticks with snake_case to match the existing
 // callers in timeline.js + step5.js (default_start / default_duration /
 // load_kw). Spec used camelCase but switching would force changes

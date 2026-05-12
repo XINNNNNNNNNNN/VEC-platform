@@ -539,8 +539,11 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
         for scenario in _SCENARIOS:
             # Phase N F6: pass area_m2 so grid_fee uses the tiered
             # nätavgift structure instead of the deprecated flat 580.
+            # Phase N-2: ownership_type triggers villa effekttariff.
             db.add(calculation_engine.calculate_bill(
-                profile, scenario, area_m2=user_input.area_m2,
+                profile, scenario,
+                area_m2=user_input.area_m2,
+                ownership_type=user_input.ownership_type,
             ))
 
         db.commit()

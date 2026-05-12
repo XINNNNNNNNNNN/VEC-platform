@@ -27,6 +27,7 @@ class CalculationEngine(ABC):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate bill breakdown for a given scenario.
 
@@ -37,6 +38,10 @@ class CalculationEngine(ABC):
                 falls back to the lowest tier — callers should pass
                 ``user_input.area_m2`` whenever they have the
                 user_input row.
+            ownership_type: ``'owner'`` triggers Swedish 2026 villa
+                effekttariff (peak-kW grid fee); ``'tenant'`` or
+                ``None`` skips it. Apartments pay only the tiered
+                abonnemang + rörlig elöverföring.
 
         Returns:
             BillBreakdown model with cost breakdown
