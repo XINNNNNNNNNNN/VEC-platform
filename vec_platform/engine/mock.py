@@ -315,23 +315,41 @@ class MockEngine(CalculationEngine):
         building_type = self._derive_building_type(user_input)
         # Phase K-2 F2: forward area_m2 + people so the base load
         # actually depends on the participant's household size.
+        # Phase N-fix-3: flex devices (cooking / dishwasher / washing)
+        # scale by household size via duration adjustment. Default
+        # durations are sized for the 2-person baseline; 1-person
+        # households cook smaller portions and run wet appliances less
+        # often, 5-person households the opposite. Sub-linear (0.8 /
+        # 1.0 / 1.6 etc.) reflects that fixed device capacity caps how
+        # much more a 5-person home actually runs vs a 2-person home.
+        # EV charging is intentionally NOT scaled — one EV draws the
+        # same charge regardless of household size.
+        people = getattr(user_input, "people", None) or 2
+        flex_scale = 0.6 + 0.2 * max(1, int(people))
+
+        def _scaled_block(start, end, kw):
+            dur = end - start
+            new_dur = max(1, round(dur * flex_scale))
+            return self._device_block(start, start + new_dur, kw)
+
         devices: dict[str, list[float]] = {
             "base_load": self._get_base_load(
                 building_type,
                 area_m2=getattr(user_input, "area_m2", None),
-                people=getattr(user_input, "people", None),
+                people=people,
             ),
             # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
-            "cooking#1": self._device_block(72, 76, 2.0),       # 18:00-19:00, 2 kW
+            "cooking#1": _scaled_block(72, 76, 2.0),       # 18:00-19:00 base, 2 kW
             # Shiftable wet appliances.
-            "dishwasher#1": self._device_block(78, 84, 1.2),    # 19:30-21:00, 1.2 kW
-            "washing_machine#1": self._device_block(76, 84, 2.0),  # 19:00-21:00, 2.0 kW
+            "dishwasher#1": _scaled_block(78, 84, 1.2),    # 19:30-21:00 base, 1.2 kW
+            "washing_machine#1": _scaled_block(76, 84, 2.0),  # 19:00-21:00 base, 2.0 kW
         }
 
         # v3 dropped the heating question along with the water_heater device.
 
         # EV charging late afternoon through midnight (16:00-24:00, 8h).
         # Kept non-wrapping so the Step 3 timeline can show it as a single block.
+        # Phase N-fix-3: NOT flex-scaled (single vehicle, not per-person).
         if user_input.has_ev:
             devices["ev_charger#1"] = self._device_block(64, 96, 3.7)
 
