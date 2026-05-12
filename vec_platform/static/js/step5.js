@@ -579,7 +579,12 @@
 
   function refreshBillCompare(netNow) {
     const el = $("bill-compare");
-    const adjusted = VECCompute.computeBillScenario(netNow, "vec_adjusted");
+    // Phase K-2 F4: per-slot retail curve so the green "after responding"
+    // bill drops when the user shifts loads into cheap (PV-trough) hours.
+    const retailArr = state.shadowPrices && state.shadowPrices.retail_price;
+    const adjusted = VECCompute.computeBillScenario(
+      netNow, "vec_adjusted", retailArr
+    );
 
     function col(label, value, extraClass = "") {
       const v = value === null || value === undefined

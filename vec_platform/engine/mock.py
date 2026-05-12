@@ -99,27 +99,64 @@ class MockEngine(CalculationEngine):
         profile: DailyProfile,
         scenario: str,
     ) -> BillBreakdown:
-        """Calculate a monthly bill breakdown for one scenario."""
+        """Calculate a monthly bill breakdown for one scenario.
 
-        net_load = json.loads(profile.net_load)
-        pv_gen = json.loads(profile.pv_generation)
+        Phase K-2 F4: replaced flat ``RETAIL_PRICE_BASE`` with a per-slot
+        integral against the SE3 summer retail curve. Users dragging a
+        device from the 17-21 evening peak (~1.0 SEK/kWh) into the
+        11-14 PV-surplus trough (~0.05 SEK/kWh) now see a real,
+        physically-meaningful bill reduction instead of a flat 1.5
+        SEK/kWh that ignored when they ran.
 
-        # Convert per-slot kW to daily kWh, then to monthly.
-        consumed_daily = sum(max(0.0, x) for x in net_load) * 0.25
-        exported_daily = sum(max(0.0, -x) for x in net_load) * 0.25
-        pv_daily = sum(pv_gen) * 0.25
+        Phase K-2 F5: pv_self_consumption is informational only. The
+        ``net_load`` curve consumed below is already net of PV
+        generation (computed in generate_profile as
+        base + flexible - pv), so ``energy_purchase`` only charges for
+        electricity actually pulled from the grid — PV self-consumption
+        is implicit in that already-reduced figure. The
+        ``pv_self_consumption`` field is therefore presented to the UI
+        as the value of self-consumed PV (avoided purchase) but
+        deliberately NOT subtracted again from net_cost; doing so
+        would double-count.
+        """
+
+        net_load = json.loads(profile.net_load) if isinstance(profile.net_load, str) else profile.net_load
+        pv_gen = json.loads(profile.pv_generation) if isinstance(profile.pv_generation, str) else profile.pv_generation
+
+        SLOT_HOURS = 0.25  # 15 minutes
+
+        # ---- Per-slot integration against the time-varying retail curve ----
+        # Phase K-2 F4. Only positive net_load (= electricity bought from
+        # the grid) contributes to ``energy_purchase``; negative net_load
+        # is export and feeds into ``feed_in_income`` further down.
+        daily_purchase_sek = sum(
+            max(0.0, net_load[i]) * SLOT_HOURS * _SE3_SUMMER_RETAIL_SEK_PER_KWH[i]
+            for i in range(SLOTS_PER_DAY)
+        )
+        consumed_daily = sum(max(0.0, x) for x in net_load) * SLOT_HOURS
+        exported_daily = sum(max(0.0, -x) for x in net_load) * SLOT_HOURS
 
         consumed_monthly = consumed_daily * DAYS_PER_MONTH
         exported_monthly = exported_daily * DAYS_PER_MONTH
-        pv_monthly = pv_daily * DAYS_PER_MONTH
 
-        energy_purchase = consumed_monthly * RETAIL_PRICE_BASE
+        energy_purchase = daily_purchase_sek * DAYS_PER_MONTH
         grid_fee = GRID_FEE_MONTHLY
         tax = consumed_monthly * ENERGY_TAX
 
-        # PV self-consumption value (assume PV first offsets own load)
-        self_consumed_monthly = max(0.0, pv_monthly - exported_monthly)
-        pv_self_consumption = self_consumed_monthly * RETAIL_PRICE_BASE
+        # ---- PV self-consumption value (informational, F5) ----
+        # Per-slot: how many kW of PV generation is actually offsetting
+        # this slot's own demand vs. flowing out as export?
+        # total_load[i] = pv_gen[i] + net_load[i]   (engine invariant)
+        # pv_self[i] = min(pv_gen[i], total_load[i]) = min(pv_gen[i], pv_gen[i] + net_load[i])
+        #            = pv_gen[i] if net_load[i] >= 0 (load >= PV → all PV self-consumed)
+        #            = pv_gen[i] + net_load[i] if net_load[i] < 0 (export → some PV self, some out)
+        daily_pv_self_sek = sum(
+            min(pv_gen[i], max(0.0, pv_gen[i] + net_load[i]))
+            * SLOT_HOURS
+            * _SE3_SUMMER_RETAIL_SEK_PER_KWH[i]
+            for i in range(SLOTS_PER_DAY)
+        )
+        pv_self_consumption = daily_pv_self_sek * DAYS_PER_MONTH
 
         if scenario == "no_vec":
             vec_discount = 0.0
@@ -131,6 +168,8 @@ class MockEngine(CalculationEngine):
             vec_discount = consumed_monthly * 0.25
             feed_in_income = exported_monthly * VEC_INTERNAL_SELL
 
+        # F5 strategy A: pv_self_consumption is NOT subtracted (would
+        # double-count — see method docstring).
         net_cost = (
             energy_purchase + grid_fee + tax
             - vec_discount - feed_in_income
@@ -177,13 +216,32 @@ class MockEngine(CalculationEngine):
 
     # -------- Internal helpers --------
 
-    def _get_base_load(self, building_type: str) -> list:
+    def _get_base_load(
+        self,
+        building_type: str,
+        area_m2: float | None = None,
+        people: int | None = None,
+    ) -> list:
         """Rigid baseline: fridge/lighting/standby + morning & evening peaks.
 
-        Spec:
+        Spec (archetype defaults, sized for 75 m² / 2 people):
           apartment: base 0.3 kW, peak 1.2 kW (06-09, 17-22)
           villa_pv / villa_pvbess: base 0.5 kW, peak 1.8 kW
           villa_noder: base 0.5 kW, peak 1.5 kW
+
+        Phase K-2 F2: scale by area_m2 and people. Pre-K-2 these two
+        Step 1 inputs were collected but had zero effect on the engine
+        — a 50 m² studio and a 200 m² villa with the same archetype
+        produced identical bills. Now:
+
+          area_scale = (area_m2 / 75) ** 0.7    # sublinear, larger
+                                                # homes don't scale 1:1
+                                                # with floor area
+          people_scale = 0.7 + 0.15 * people    # 2 ppl → 1.0; 5 ppl → 1.45
+
+        Both factors multiply the archetype base & peak. 75 m² + 2 ppl
+        reproduces the pre-K-2 numbers exactly so existing pilot data
+        stays comparable.
         """
         if building_type == "apartment":
             base, peak = 0.3, 1.2
@@ -191,6 +249,18 @@ class MockEngine(CalculationEngine):
             base, peak = 0.5, 1.5
         else:  # villa_pv, villa_pvbess
             base, peak = 0.5, 1.8
+
+        # Phase K-2 F2 scaling. Defensive defaults preserve archetype
+        # behaviour when called without user_input (e.g. unit tests).
+        if area_m2 is None:
+            area_m2 = 75.0
+        if people is None:
+            people = 2
+        area_scale = (max(20.0, float(area_m2)) / 75.0) ** 0.7
+        people_scale = 0.7 + 0.15 * max(1, int(people))
+        scale = area_scale * people_scale
+        base *= scale
+        peak *= scale
 
         load = [base] * SLOTS_PER_DAY
         for i in range(SLOTS_PER_DAY):
@@ -218,8 +288,14 @@ class MockEngine(CalculationEngine):
         name — it is the rigid background, not a device instance.
         """
         building_type = self._derive_building_type(user_input)
+        # Phase K-2 F2: forward area_m2 + people so the base load
+        # actually depends on the participant's household size.
         devices: dict[str, list[float]] = {
-            "base_load": self._get_base_load(building_type),
+            "base_load": self._get_base_load(
+                building_type,
+                area_m2=getattr(user_input, "area_m2", None),
+                people=getattr(user_input, "people", None),
+            ),
             # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
             "cooking#1": self._device_block(72, 76, 2.0),       # 18:00-19:00, 2 kW
             # Shiftable wet appliances.

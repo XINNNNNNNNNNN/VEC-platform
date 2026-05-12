@@ -40,8 +40,53 @@ from vec_platform.pages._helpers import (
 # ==================== Step 5 ====================
 
 def _pick_scenario_bill(db, session_id: str, scenario: str, preferred_step: int):
-    """Find the right bill for each scenario, falling back sensibly."""
-    from vec_platform.models import BillBreakdown
+    """Find the right bill for each scenario, falling back sensibly.
+
+    Phase K-2 F1: for the step=2 baseline scenario, the bill is
+    regenerated on the fly from the current ``user_inputs`` row rather
+    than read from the frozen ``bill_breakdowns`` snapshot written at
+    Step 1 submit. Without this, a participant who calibrated PV
+    capacity (Phase C) on the customize page would still see the
+    pre-calibration default-PV baseline on the Step 5 compare page —
+    making the "without VEC" anchor inconsistent with everything else
+    on the page.
+
+    step=3 (customize) and step=5 (responded) keep reading the
+    DB-persisted snapshot, since those are correctly written by
+    /api/recalculate at submit time with current user_input state.
+    """
+    from vec_platform.models import BillBreakdown, UserInput, DailyProfile
+    from vec_platform.runtime import calculation_engine
+    import json as _json
+
+    if preferred_step == 2:
+        ui = (
+            db.query(UserInput)
+            .filter(UserInput.session_id == session_id)
+            .order_by(UserInput.id.desc())
+            .first()
+        )
+        if ui is not None:
+            # Regenerate baseline profile from current user_input,
+            # then apply load_scale_factor before computing the bill
+            # so the same scaling the user sees on the customize page
+            # is reflected here too.
+            fresh = calculation_engine.generate_profile(ui)
+            scale = float(ui.load_scale_factor or 1.0)
+            rigid = [v * scale for v in _json.loads(fresh.rigid_load)]
+            flex = _json.loads(fresh.flexible_load)
+            pv = _json.loads(fresh.pv_generation)
+            net = [rigid[i] + flex[i] - pv[i] for i in range(len(rigid))]
+            profile_view = DailyProfile(
+                session_id=session_id,
+                step=2,
+                rigid_load=_json.dumps(rigid),
+                flexible_load=_json.dumps(flex),
+                pv_generation=_json.dumps(pv),
+                net_load=_json.dumps(net),
+                devices=fresh.devices,
+            )
+            return calculation_engine.calculate_bill(profile_view, scenario)
 
     q = db.query(BillBreakdown).filter(
         BillBreakdown.session_id == session_id,

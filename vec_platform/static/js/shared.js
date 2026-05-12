@@ -116,16 +116,33 @@ const VECCompute = (() => {
 
   // Mirrors vec_platform/engine/mock.py MockEngine.calculate_bill so the JS
   // live preview matches the server-side persisted bill.
-  function computeBillScenario(netLoad, scenario) {
+  //
+  // Phase K-2 F4: ``retailArr`` is the 96-slot per-slot retail price
+  // curve. When provided, energy_purchase integrates net_load against
+  // the curve so dragging devices to cheap hours produces a real
+  // bill reduction. When omitted (legacy callers), falls back to flat
+  // PRICE_RETAIL so the function stays usable in contexts that don't
+  // load /api/shadow-prices.
+  function computeBillScenario(netLoad, scenario, retailArr = null) {
     let consumedDaily = 0, exportedDaily = 0;
-    for (const x of netLoad) {
-      if (x > 0) consumedDaily += x * SLOT_HOURS;
-      else exportedDaily += -x * SLOT_HOURS;
+    let purchaseDaily = 0;
+    for (let i = 0; i < netLoad.length; i++) {
+      const x = netLoad[i];
+      if (x > 0) {
+        const kwh = x * SLOT_HOURS;
+        consumedDaily += kwh;
+        const retail = (retailArr && retailArr.length === netLoad.length)
+          ? retailArr[i]
+          : PRICE_RETAIL;
+        purchaseDaily += kwh * retail;
+      } else {
+        exportedDaily += -x * SLOT_HOURS;
+      }
     }
     const consumedMonthly = consumedDaily * DAYS_PER_MONTH;
     const exportedMonthly = exportedDaily * DAYS_PER_MONTH;
 
-    const energyPurchase = consumedMonthly * PRICE_RETAIL;
+    const energyPurchase = purchaseDaily * DAYS_PER_MONTH;
     const gridFee = PRICE_GRID_FEE_MONTHLY;
     const tax = consumedMonthly * PRICE_TAX;
 

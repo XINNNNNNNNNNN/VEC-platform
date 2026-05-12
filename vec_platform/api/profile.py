@@ -156,6 +156,17 @@ def get_profile(
     rigid_load_arr = json.loads(profile.rigid_load)
     pv_generation_arr = json.loads(profile.pv_generation)
     if user_input is not None:
+        # Phase K-2 F1+F2: re-derive rigid_load from current user_input
+        # so changes to area_m2 / people / building_type flow through
+        # to the baseline view without needing to rewrite step=2 in
+        # the DB. (PV re-derive below was Phase D-1; F2 extends the
+        # same pattern to the rigid load.)
+        building_type = calculation_engine._derive_building_type(user_input)
+        rigid_load_arr = calculation_engine._get_base_load(
+            building_type,
+            area_m2=user_input.area_m2,
+            people=user_input.people,
+        )
         if has_pv:
             pv_generation_arr = calculation_engine._get_pv_generation(user_input)
         else:

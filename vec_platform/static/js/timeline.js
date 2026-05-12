@@ -509,7 +509,12 @@
     };
     Plotly.react("load-chart", traces, layout, { displayModeBar: false });
 
-    const bill = VECCompute.computeBillScenario(netLoad, "no_vec");
+    // Phase K-2 F4: pass the per-slot retail curve so live bill
+    // updates while dragging a device reflect the actual cost at
+    // each time-of-day, not a flat average.
+    const bill = VECCompute.computeBillScenario(
+      netLoad, "no_vec", state.spotPrices
+    );
     renderBillCard(bill);
   }
 
@@ -621,7 +626,11 @@
     }
 
     // Original bill for delta comparison: compute from Step 2's net_load directly.
-    state.originalBill = VECCompute.computeBillScenario(profile.net_load, "no_vec");
+    // Phase K-2 F4: pass the loaded retail curve so the baseline bill
+    // uses the same per-slot pricing as the live preview.
+    state.originalBill = VECCompute.computeBillScenario(
+      profile.net_load, "no_vec", state.spotPrices
+    );
 
     renderTimeline();
     renderDeviceList();
