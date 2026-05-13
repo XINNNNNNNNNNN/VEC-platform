@@ -126,7 +126,28 @@ class UserInput(Base):
     # ----- v3.0 fields -----
     # Replace v2 `building_type` (5-choice) and `heating` with these two.
     # MockEngine derives an internal building_type code from ownership + DER.
+    # Phase H: DEPRECATED — kept for one-cycle rollback safety. New code
+    # reads housing_type instead. mock.calculate_bill still accepts
+    # ownership_type as a fallback kwarg (tenant -> apt_renting,
+    # owner -> villa_owner).
     ownership_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'tenant' | 'owner'
+    # Phase H: 5-way housing classification mirroring E.ON Sweden's
+    # consumer-survey categories, with apartment split into
+    # renting/condo (BRF) so the SP experiment can distinguish
+    # eligibility. Drives:
+    #   - effekttariff applicability (config.EFFEKTTARIFF_HOUSING):
+    #     townhouse/villa/other have their own meter and pay the fee;
+    #     apt_renting + apt_condo share the building's grid connection
+    #     and do not.
+    #   - mock engine archetype: apt_* -> apartment (district heating);
+    #     everything else -> house (heat-pump assumption per N-fix-4).
+    #   - N-fix-5 single guard: (people==1 AND housing_type=='apt_renting')
+    #     still skips dishwasher and halves washing duration.
+    # Nullable: 172 pre-pilot dogfood sessions stay NULL and use the
+    # house-archetype fallback path; those rows are not used for
+    # pilot analysis.
+    housing_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # ^ 'apt_renting' | 'apt_condo' | 'townhouse_owner' | 'villa_owner' | 'other' | NULL
     # Step 1 Q5; drives sessions.expertise. Phase 3.X-fix-10 relaxed
     # this to nullable: Q5 is conditionally rendered (only when
     # vec_familiarity is in the top 2 of the 5-pt scale), so users

@@ -87,6 +87,14 @@ EFFEKTTARIFF_NIGHT_SEK_PER_KW = 40.62
 EFFEKTTARIFF_DAY_START_HOUR = 6
 EFFEKTTARIFF_DAY_END_HOUR = 22
 
+# Phase H: effekttariff applies only to housings with their own
+# electricity meter and grid connection. BRF condo apartments and
+# rented apartments pay through the building's shared connection,
+# so the peak-kW fee is collected at the building level, not the
+# household level. Mirrors Ellevio's billing scope for SE3 villa
+# customers (the 500k-household Jan 2026 roll-out).
+EFFEKTTARIFF_HOUSING = frozenset({"townhouse_owner", "villa_owner", "other"})
+
 # CO2 emission factor (kg/kWh) - Nordic mix
 CO2_FACTOR = 0.045
 

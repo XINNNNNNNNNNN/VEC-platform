@@ -122,10 +122,13 @@ def _cascade_rewrite_step2_baseline(db: Session, ui: UserInput) -> None:
         # Phase N F6: area_m2 drives the tiered grid_fee_fixed so the
         # cascade-rewritten step=2 bill matches what other callers
         # (step1, recalculate, lazy regen) produce.
-        # Phase N-2: ownership_type for villa effekttariff.
+        # Phase H: housing_type is the new effekttariff gate;
+        # ownership_type passes along as fallback for rows pre-dating
+        # the migration.
         db.add(calculation_engine.calculate_bill(
             profile_row, scenario,
             area_m2=ui.area_m2,
+            housing_type=getattr(ui, "housing_type", None),
             ownership_type=ui.ownership_type,
         ))
 

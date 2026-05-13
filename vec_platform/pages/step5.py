@@ -88,10 +88,12 @@ def _pick_scenario_bill(db, session_id: str, scenario: str, preferred_step: int)
             )
             # Phase N F6: pass ui.area_m2 so lazy regen matches the
             # cascade-rewritten DB row and frontend live preview.
-            # Phase N-2: ownership_type for villa effekttariff.
+            # Phase H: housing_type gates effekttariff; ownership_type
+            # is the one-cycle legacy fallback.
             return calculation_engine.calculate_bill(
                 profile_view, scenario,
                 area_m2=ui.area_m2,
+                housing_type=getattr(ui, "housing_type", None),
                 ownership_type=ui.ownership_type,
             )
 

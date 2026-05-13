@@ -14,8 +14,30 @@ from vec_platform.config import (
     EFFEKTTARIFF_DAY_SEK_PER_KW,
     EFFEKTTARIFF_DAY_START_HOUR,
     EFFEKTTARIFF_DAY_END_HOUR,
+    EFFEKTTARIFF_HOUSING,
     SLOTS_PER_DAY,
 )
+
+
+# Phase H: housing_type → archetype mapping. Two engine archetypes:
+# apartment (district-heated, N-fix-2 0.15/0.6) and house (heat-pump
+# assumption, N-fix-4 0.3/1.0 for villa_pv/pvbess; 0.3/0.9 for noder).
+_APARTMENT_HOUSING_TYPES = frozenset({"apt_renting", "apt_condo"})
+
+
+def _housing_type_from_legacy_ownership(ownership_type):
+    """Translate the deprecated ownership_type kwarg to housing_type.
+
+    Phase H one-cycle compat: callers that still pass ownership_type
+    instead of housing_type get the closest equivalent — tenant maps
+    to renting apartment, owner to the villa-with-meter case. Once
+    every caller is migrated this helper can be removed.
+    """
+    if ownership_type == "tenant":
+        return "apt_renting"
+    if ownership_type == "owner":
+        return "villa_owner"
+    return None
 # Phase N F9: RETAIL_PRICE_BASE and GRID_FEE_MONTHLY are deprecated
 # (replaced by _SE3_SUMMER_RETAIL_SEK_PER_KWH per-slot curve and the
 # tiered grid_fee_fixed + GRID_FEE_VARIABLE_RATE respectively). Both
@@ -111,6 +133,7 @@ class MockEngine(CalculationEngine):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        housing_type: str | None = None,
         ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate a monthly bill breakdown for one scenario.
@@ -169,7 +192,21 @@ class MockEngine(CalculationEngine):
         # one-day proxy for the month's top-3-hour average. Shifting
         # load into the night window (22-06) zeroes the fee — the
         # exact signal the VEC SP experiment wants to surface.
-        if ownership_type == "owner":
+        # Phase H: gate on housing_type instead of the deprecated
+        # ownership_type. Apartment owners (BRF condo) and renters
+        # share the building's grid connection — only townhouse /
+        # villa / other (own-meter) housings are billed individually.
+        # Legacy callers passing only ownership_type get a one-cycle
+        # translation; NULL housing_type from pre-Phase-H dogfood
+        # rows preserves the historical owner-as-villa default.
+        if housing_type is None:
+            housing_type = _housing_type_from_legacy_ownership(ownership_type)
+        if housing_type is None and ownership_type is None:
+            # Pre-Phase-H NULL row (172 dogfood sessions): treat as
+            # villa_owner so the engine output matches what those
+            # rows saw at write-time.
+            housing_type = "villa_owner"
+        if housing_type in EFFEKTTARIFF_HOUSING:
             hourly_avg_kw = []
             slots_per_hour = SLOTS_PER_DAY // 24  # 4
             for hour in range(24):
@@ -362,9 +399,10 @@ class MockEngine(CalculationEngine):
         # EV charging is intentionally NOT scaled — one EV draws the
         # same charge regardless of household size.
         people = getattr(user_input, "people", None) or 2
+        housing_type = getattr(user_input, "housing_type", None)
         ownership_type = getattr(user_input, "ownership_type", None)
         flex_scale = 0.6 + 0.2 * max(1, int(people))
-        # Phase N-fix-5: single-occupancy tenant apartments deviate
+        # Phase N-fix-5: single-occupancy renting apartments deviate
         # from the default 2-person template more than the linear
         # flex_scale captures. Two adjustments:
         #   A) Dishwasher is absent — only ~20-30% of single-person
@@ -372,10 +410,15 @@ class MockEngine(CalculationEngine):
         #   B) Washing-machine duration is halved beyond flex_scale
         #      (1-2 cycles/week vs the 2-person 3-4). Implemented by
         #      a direct _device_block call so it bypasses flex_scale.
-        # Guards are AND-gated on tenant ownership so they cannot
-        # affect any owner-occupied case (villa N-fix-4 calibration
-        # stays intact).
-        single_tenant = (people == 1 and ownership_type == "tenant")
+        # Phase H: gate on housing_type=='apt_renting' (replacing the
+        # legacy ownership_type=='tenant'). Falls back to the legacy
+        # check for pre-migration NULL rows. Condo owners (apt_condo)
+        # are intentionally excluded — they typically have a full
+        # apartment-sized appliance kit even when living alone.
+        if housing_type is not None:
+            single_tenant = (people == 1 and housing_type == "apt_renting")
+        else:
+            single_tenant = (people == 1 and ownership_type == "tenant")
 
         def _scaled_block(start, end, kw):
             dur = end - start
@@ -420,18 +463,29 @@ class MockEngine(CalculationEngine):
 
     @staticmethod
     def _derive_building_type(user_input: UserInput) -> str:
-        """Map v3 ownership + DER → v2-style building_type code.
+        """Map v3 housing + DER → engine archetype code.
 
-        Internal helper only; v3 no longer stores building_type in the DB. The
-        engine still drives base-load amplitude with the same archetypes:
-          tenant            -> apartment
-          owner, no PV      -> villa_noder
-          owner, PV         -> villa_pv
-          owner, PV + BESS  -> villa_pvbess
+        Internal helper only; the engine still drives base-load amplitude
+        with these archetypes (Phase N-fix-2 / -4 calibrated):
+          apartment         (apt_renting / apt_condo)         0.15 / 0.6
+          villa_noder       (house, no PV)                    0.3  / 0.9
+          villa_pv          (house, has PV no BESS)           0.3  / 1.0
+          villa_pvbess      (house, has PV + BESS)            0.3  / 1.0
+
+        Phase H: prefers ``housing_type`` (apt_renting / apt_condo /
+        townhouse_owner / villa_owner / other). Falls back to the legacy
+        ``ownership_type`` for rows written before the migration, and
+        finally to the house archetype for pre-pilot NULL dogfood rows.
         """
-        if user_input.ownership_type == "tenant":
+        housing_type = getattr(user_input, "housing_type", None)
+        if housing_type in _APARTMENT_HOUSING_TYPES:
             return "apartment"
-        # owner branch
+        if housing_type is None:
+            # Legacy / pre-Phase-H row — fall back to ownership_type.
+            if user_input.ownership_type == "tenant":
+                return "apartment"
+        # All non-apartment housing_type values (townhouse / villa /
+        # other) plus NULL+owner legacy fall into the house branch.
         if user_input.has_pv and user_input.has_bess:
             return "villa_pvbess"
         if user_input.has_pv:

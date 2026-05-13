@@ -27,6 +27,7 @@ class CalculationEngine(ABC):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        housing_type: str | None = None,
         ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate bill breakdown for a given scenario.
@@ -38,10 +39,13 @@ class CalculationEngine(ABC):
                 falls back to the lowest tier — callers should pass
                 ``user_input.area_m2`` whenever they have the
                 user_input row.
-            ownership_type: ``'owner'`` triggers Swedish 2026 villa
-                effekttariff (peak-kW grid fee); ``'tenant'`` or
-                ``None`` skips it. Apartments pay only the tiered
-                abonnemang + rörlig elöverföring.
+            housing_type: Phase H — drives effekttariff applicability.
+                Values in ``config.EFFEKTTARIFF_HOUSING`` (townhouse_owner,
+                villa_owner, other) add the peak-kW fee; apt_renting,
+                apt_condo, and None skip it.
+            ownership_type: DEPRECATED — kept for one-cycle rollback
+                safety. Translated to housing_type when housing_type
+                is None (tenant -> apt_renting, owner -> villa_owner).
 
         Returns:
             BillBreakdown model with cost breakdown

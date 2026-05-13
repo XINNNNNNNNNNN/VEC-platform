@@ -30,8 +30,13 @@
     // Phase N F6: floor area, drives the tiered grid fee (abonnemang)
     // in computeBillScenario so the live preview matches the backend.
     areaM2: null,
-    // Phase N-2: 'owner' triggers villa effekttariff in the live
-    // preview; 'tenant' / null skips it. Mirrors user_input.ownership_type.
+    // Phase H: 5-way housing classification driving effekttariff gate.
+    // Values in EFFEKTTARIFF_HOUSING (townhouse/villa/other) pay;
+    // apt_renting / apt_condo skip. Mirrors user_input.housing_type.
+    housingType: null,
+    // Phase N-2 (DEPRECATED, one-cycle): legacy ownership_type still
+    // surfaced so old /api/profile payloads keep working until the
+    // housing_type field has fully rolled out.
     ownershipType: null,
   };
 
@@ -519,9 +524,11 @@
     // updates while dragging a device reflect the actual cost at
     // each time-of-day, not a flat average.
     // Phase N F6: also pass areaM2 so grid_fee tier matches backend.
-    // Phase N-2: pass ownershipType so villa effekttariff applies live.
+    // Phase H: housingType gates effekttariff; ownershipType is the
+    // legacy fallback for pre-Phase-H sessions.
     const bill = VECCompute.computeBillScenario(
-      netLoad, "no_vec", state.spotPrices, state.areaM2, state.ownershipType
+      netLoad, "no_vec", state.spotPrices, state.areaM2,
+      state.housingType, state.ownershipType
     );
     renderBillCard(bill);
   }
@@ -596,7 +603,10 @@
     // same tiered grid fee as the backend. null is acceptable —
     // gridFeeFixed defaults to the lowest tier (100 SEK).
     state.areaM2 = profile.area_m2 ?? null;
-    // Phase N-2: ownership_type gates effekttariff in the JS preview.
+    // Phase H: housing_type gates effekttariff in the live preview.
+    state.housingType = profile.housing_type ?? null;
+    // Phase N-2 legacy: still read ownership_type for sessions whose
+    // /api/profile response predates the housing_type column.
     state.ownershipType = profile.ownership_type ?? null;
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
@@ -648,10 +658,11 @@
     // Phase K-2 F4: pass the loaded retail curve so the baseline bill
     // uses the same per-slot pricing as the live preview.
     // Phase N F6: pass areaM2 so grid_fee matches backend tiered fee.
-    // Phase N-2: pass ownershipType for effekttariff parity.
+    // Phase H: housingType for effekttariff parity; ownershipType
+    // legacy fallback.
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.ownershipType
+      state.areaM2, state.housingType, state.ownershipType
     );
 
     renderTimeline();
@@ -800,7 +811,10 @@
     // Phase N F6: area_m2 cannot change via calibration, but refresh
     // it defensively in case the server response shape evolved.
     state.areaM2 = profile.area_m2 ?? state.areaM2;
-    // Phase N-2: same defensive refresh for ownership_type.
+    // Phase H: same defensive refresh for housing_type + legacy
+    // ownership_type. Neither can change post-Step-1, but reading
+    // them protects against any future server-side rewrite.
+    state.housingType = profile.housing_type ?? state.housingType;
     state.ownershipType = profile.ownership_type ?? state.ownershipType;
     // Phase L: re-anchor the "vs. baseline" delta on the calibrated
     // state. Without this, dragging a device after raising PV from 5
@@ -811,10 +825,11 @@
     // is the post-cascade step=2 row (Phase K-2 fix-1), so its
     // net_load already reflects current calibration.
     // Phase N F6: pass areaM2 for tiered grid_fee consistency.
-    // Phase N-2: pass ownershipType for effekttariff parity.
+    // Phase H: housingType for effekttariff parity; ownershipType
+    // legacy fallback.
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.ownershipType
+      state.areaM2, state.housingType, state.ownershipType
     );
     refreshChartAndBill();
   }

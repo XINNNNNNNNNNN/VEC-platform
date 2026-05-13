@@ -220,6 +220,13 @@ def get_profile(
         "ownership_type": (
             user_input.ownership_type if user_input is not None else None
         ),
+        # Phase H: surface housing_type so JS effekttariff gate uses
+        # the new 5-way classification. Replaces the role
+        # ownership_type used to play in the live preview.
+        "housing_type": (
+            getattr(user_input, "housing_type", None)
+            if user_input is not None else None
+        ),
     }
 
 
@@ -361,12 +368,20 @@ def recalculate(
 
     bills = {}
     # Phase N F6: area_m2 from user_input drives tiered grid_fee.
-    # Phase N-2: ownership_type triggers villa effekttariff.
+    # Phase H: housing_type gates effekttariff; ownership_type is the
+    # one-cycle legacy fallback.
     area_m2 = user_input.area_m2 if user_input is not None else None
+    housing_type = (
+        getattr(user_input, "housing_type", None)
+        if user_input is not None else None
+    )
     ownership_type = user_input.ownership_type if user_input is not None else None
     for scenario in ("no_vec", "vec_no_adjust", "vec_adjusted"):
         bill = calculation_engine.calculate_bill(
-            profile, scenario, area_m2=area_m2, ownership_type=ownership_type,
+            profile, scenario,
+            area_m2=area_m2,
+            housing_type=housing_type,
+            ownership_type=ownership_type,
         )
         db.add(bill)
         bills[scenario] = {

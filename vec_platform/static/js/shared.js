@@ -127,11 +127,15 @@ const VECCompute = (() => {
   // portion of the grid fee). Default null falls back to the lowest
   // tier (100 SEK) — callers should pass profile.area_m2 from
   // /api/profile so the live preview matches the backend.
-  // Phase N-2: ``ownershipType`` ('owner' | 'tenant' | null) gates
-  // the Sweden-2026 villa effekttariff (peak-kW fee). Pass
-  // profile.ownership_type from /api/profile.
+  // Phase N-2 / Phase H: ``housingType`` gates the Sweden-2026
+  // effekttariff (peak-kW fee). Values in EFFEKTTARIFF_HOUSING
+  // (townhouse_owner / villa_owner / other) pay; apt_renting / apt_condo
+  // / null skip it. ``ownershipType`` is retained as a one-cycle
+  // fallback for sessions whose /api/profile response predates the
+  // housing_type column.
   function computeBillScenario(
-    netLoad, scenario, retailArr = null, areaM2 = null, ownershipType = null,
+    netLoad, scenario, retailArr = null, areaM2 = null,
+    housingType = null, ownershipType = null,
   ) {
     let consumedDaily = 0, exportedDaily = 0;
     let purchaseDaily = 0;
@@ -154,12 +158,13 @@ const VECCompute = (() => {
     const energyPurchase = purchaseDaily * DAYS_PER_MONTH;
     // Phase N F6: nätavgift = abonnemang (tier by area) + rörlig
     // elöverföring (× monthly kWh transmitted).
-    // Phase N-2: villa owners also pay effekttariff (peak-kW fee).
-    // Effekttariff is added to gridFee so the line item displayed on
-    // the bill card stays single-row "Grid fee" (no UI shape change).
+    // Phase N-2 / Phase H: housings with their own meter also pay
+    // effekttariff (peak-kW fee). Effekttariff is added to gridFee
+    // so the displayed bill card line "Grid fee" stays single-row
+    // (no UI shape change).
     const gridFee = gridFeeFixed(areaM2)
       + consumedMonthly * PRICE_GRID_FEE_VARIABLE_RATE
-      + effekttariffMonthly(netLoad, ownershipType);
+      + effekttariffMonthly(netLoad, housingType, ownershipType);
     const tax = consumedMonthly * PRICE_TAX;
 
     let vecDiscount, feedIn;

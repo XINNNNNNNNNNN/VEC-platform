@@ -42,12 +42,28 @@ const EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25;
 const EFFEKTTARIFF_DAY_START_HOUR = 6;
 const EFFEKTTARIFF_DAY_END_HOUR = 22;
 
-// Owner-only fee; returns 0 for tenants / unknown.
-// netLoad is the 96-slot kW array; the day-window hourly peak is the
-// same proxy the backend uses (single-day stand-in for monthly
-// top-3-hour average).
-function effekttariffMonthly(netLoad, ownershipType) {
-  if (ownershipType !== "owner" || !Array.isArray(netLoad)) return 0;
+// Phase H: housing_type values that pay effekttariff (own electricity
+// meter / grid connection). Mirrors config.EFFEKTTARIFF_HOUSING.
+// Apartment renters and BRF condo owners share the building's grid
+// connection so the peak-kW fee does not apply to them.
+const EFFEKTTARIFF_HOUSING = ["townhouse_owner", "villa_owner", "other"];
+
+// Returns 0 unless housing_type triggers effekttariff. netLoad is the
+// 96-slot kW array; the day-window hourly peak is the same proxy the
+// backend uses (single-day stand-in for monthly top-3-hour average).
+// Phase H: legacy ownershipType still accepted as fallback for sessions
+// whose /api/profile response predates the housing_type field — only
+// 'owner' triggers the fee in that legacy path (matches the previous
+// behaviour).
+function effekttariffMonthly(netLoad, housingType, ownershipType) {
+  if (!Array.isArray(netLoad)) return 0;
+  let applies;
+  if (housingType != null) {
+    applies = EFFEKTTARIFF_HOUSING.indexOf(housingType) !== -1;
+  } else {
+    applies = ownershipType === "owner";
+  }
+  if (!applies) return 0;
   const slotsPerHour = 4;
   let peakKw = 0;
   for (let h = EFFEKTTARIFF_DAY_START_HOUR; h < EFFEKTTARIFF_DAY_END_HOUR; h++) {
