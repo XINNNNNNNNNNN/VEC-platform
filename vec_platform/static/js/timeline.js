@@ -30,13 +30,15 @@
     // Phase N F6: floor area, drives the tiered grid fee (abonnemang)
     // in computeBillScenario so the live preview matches the backend.
     areaM2: null,
-    // Phase H: 5-way housing classification driving effekttariff gate.
-    // Values in EFFEKTTARIFF_HOUSING (townhouse/villa/other) pay;
-    // apt_renting / apt_condo skip. Mirrors user_input.housing_type.
+    // Phase H+1: 4-way building shape + bool ownership driving the
+    // effekttariff gate. effekttariff applies when isOwner===true AND
+    // buildingType in EFFEKTTARIFF_BUILDINGS (townhouse / house / other).
+    buildingType: null,
+    isOwner: null,
+    // Phase H (DEPRECATED): legacy 5-way housing_type. Kept for
+    // one-cycle fallback when /api/profile response lacks the new pair.
     housingType: null,
-    // Phase N-2 (DEPRECATED, one-cycle): legacy ownership_type still
-    // surfaced so old /api/profile payloads keep working until the
-    // housing_type field has fully rolled out.
+    // Pre-Phase-H legacy: ownership_type 2-way. Fallback of last resort.
     ownershipType: null,
   };
 
@@ -524,10 +526,11 @@
     // updates while dragging a device reflect the actual cost at
     // each time-of-day, not a flat average.
     // Phase N F6: also pass areaM2 so grid_fee tier matches backend.
-    // Phase H: housingType gates effekttariff; ownershipType is the
-    // legacy fallback for pre-Phase-H sessions.
+    // Phase H+1: buildingType + isOwner gate effekttariff; legacy
+    // housingType + ownershipType passed as one-cycle fallbacks.
     const bill = VECCompute.computeBillScenario(
       netLoad, "no_vec", state.spotPrices, state.areaM2,
+      state.buildingType, state.isOwner,
       state.housingType, state.ownershipType
     );
     renderBillCard(bill);
@@ -603,10 +606,11 @@
     // same tiered grid fee as the backend. null is acceptable —
     // gridFeeFixed defaults to the lowest tier (100 SEK).
     state.areaM2 = profile.area_m2 ?? null;
-    // Phase H: housing_type gates effekttariff in the live preview.
+    // Phase H+1: building_type + is_owner gate effekttariff in the
+    // JS preview. Legacy fields kept as fallbacks for older payloads.
+    state.buildingType = profile.building_type ?? null;
+    state.isOwner = profile.is_owner ?? null;
     state.housingType = profile.housing_type ?? null;
-    // Phase N-2 legacy: still read ownership_type for sessions whose
-    // /api/profile response predates the housing_type column.
     state.ownershipType = profile.ownership_type ?? null;
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
@@ -658,11 +662,13 @@
     // Phase K-2 F4: pass the loaded retail curve so the baseline bill
     // uses the same per-slot pricing as the live preview.
     // Phase N F6: pass areaM2 so grid_fee matches backend tiered fee.
-    // Phase H: housingType for effekttariff parity; ownershipType
-    // legacy fallback.
+    // Phase H+1: buildingType + isOwner for effekttariff parity;
+    // legacy housingType + ownershipType passed as fallbacks.
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.housingType, state.ownershipType
+      state.areaM2,
+      state.buildingType, state.isOwner,
+      state.housingType, state.ownershipType
     );
 
     renderTimeline();
@@ -811,9 +817,11 @@
     // Phase N F6: area_m2 cannot change via calibration, but refresh
     // it defensively in case the server response shape evolved.
     state.areaM2 = profile.area_m2 ?? state.areaM2;
-    // Phase H: same defensive refresh for housing_type + legacy
-    // ownership_type. Neither can change post-Step-1, but reading
-    // them protects against any future server-side rewrite.
+    // Phase H+1: same defensive refresh for the new pair + legacy
+    // fields. None can change post-Step-1, but reading them
+    // protects against any future server-side rewrite.
+    state.buildingType = profile.building_type ?? state.buildingType;
+    state.isOwner = profile.is_owner ?? state.isOwner;
     state.housingType = profile.housing_type ?? state.housingType;
     state.ownershipType = profile.ownership_type ?? state.ownershipType;
     // Phase L: re-anchor the "vs. baseline" delta on the calibrated
@@ -825,11 +833,13 @@
     // is the post-cascade step=2 row (Phase K-2 fix-1), so its
     // net_load already reflects current calibration.
     // Phase N F6: pass areaM2 for tiered grid_fee consistency.
-    // Phase H: housingType for effekttariff parity; ownershipType
-    // legacy fallback.
+    // Phase H+1: buildingType + isOwner for effekttariff parity;
+    // legacy housingType + ownershipType passed as fallbacks.
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.housingType, state.ownershipType
+      state.areaM2,
+      state.buildingType, state.isOwner,
+      state.housingType, state.ownershipType
     );
     refreshChartAndBill();
   }

@@ -56,8 +56,8 @@ def create_bill(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Phase N F6: lookup user_input.area_m2 for the tiered grid fee.
-    # Phase H: housing_type for effekttariff gate; ownership_type for
-    # one-cycle legacy fallback.
+    # Phase H+1: building_type + is_owner gate effekttariff; legacy
+    # housing_type + ownership_type are one-cycle fallbacks.
     user_input = (
         db.query(UserInput)
         .filter(UserInput.session_id == data.session_id)
@@ -65,6 +65,14 @@ def create_bill(
         .first()
     )
     area_m2 = user_input.area_m2 if user_input is not None else None
+    building_type = (
+        getattr(user_input, "building_type", None)
+        if user_input is not None else None
+    )
+    is_owner = (
+        getattr(user_input, "is_owner", None)
+        if user_input is not None else None
+    )
     housing_type = (
         getattr(user_input, "housing_type", None)
         if user_input is not None else None
@@ -75,6 +83,8 @@ def create_bill(
     bill = calculation_engine.calculate_bill(
         profile, data.scenario,
         area_m2=area_m2,
+        building_type=building_type,
+        is_owner=is_owner,
         housing_type=housing_type,
         ownership_type=ownership_type,
     )

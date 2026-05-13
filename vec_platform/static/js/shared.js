@@ -127,14 +127,14 @@ const VECCompute = (() => {
   // portion of the grid fee). Default null falls back to the lowest
   // tier (100 SEK) — callers should pass profile.area_m2 from
   // /api/profile so the live preview matches the backend.
-  // Phase N-2 / Phase H: ``housingType`` gates the Sweden-2026
-  // effekttariff (peak-kW fee). Values in EFFEKTTARIFF_HOUSING
-  // (townhouse_owner / villa_owner / other) pay; apt_renting / apt_condo
-  // / null skip it. ``ownershipType`` is retained as a one-cycle
-  // fallback for sessions whose /api/profile response predates the
-  // housing_type column.
+  // Phase H+1 effekttariff gate: ``buildingType`` + ``isOwner``.
+  // Values of buildingType in EFFEKTTARIFF_BUILDINGS combined with
+  // isOwner===true add the peak-kW fee. ``housingType`` (Phase H)
+  // and ``ownershipType`` (pre-Phase-H) are retained as one-cycle
+  // fallbacks for /api/profile responses that predate the new pair.
   function computeBillScenario(
     netLoad, scenario, retailArr = null, areaM2 = null,
+    buildingType = null, isOwner = null,
     housingType = null, ownershipType = null,
   ) {
     let consumedDaily = 0, exportedDaily = 0;
@@ -158,13 +158,14 @@ const VECCompute = (() => {
     const energyPurchase = purchaseDaily * DAYS_PER_MONTH;
     // Phase N F6: nätavgift = abonnemang (tier by area) + rörlig
     // elöverföring (× monthly kWh transmitted).
-    // Phase N-2 / Phase H: housings with their own meter also pay
-    // effekttariff (peak-kW fee). Effekttariff is added to gridFee
-    // so the displayed bill card line "Grid fee" stays single-row
-    // (no UI shape change).
+    // Phase H+1: effekttariff (peak-kW fee) only when both
+    // buildingType is in EFFEKTTARIFF_BUILDINGS AND isOwner === true.
+    // Added to gridFee so the bill card "Grid fee" stays single-row.
     const gridFee = gridFeeFixed(areaM2)
       + consumedMonthly * PRICE_GRID_FEE_VARIABLE_RATE
-      + effekttariffMonthly(netLoad, housingType, ownershipType);
+      + effekttariffMonthly(
+          netLoad, buildingType, isOwner, housingType, ownershipType,
+        );
     const tax = consumedMonthly * PRICE_TAX;
 
     let vecDiscount, feedIn;

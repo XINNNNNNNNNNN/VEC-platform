@@ -42,23 +42,30 @@ const EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25;
 const EFFEKTTARIFF_DAY_START_HOUR = 6;
 const EFFEKTTARIFF_DAY_END_HOUR = 22;
 
-// Phase H: housing_type values that pay effekttariff (own electricity
-// meter / grid connection). Mirrors config.EFFEKTTARIFF_HOUSING.
-// Apartment renters and BRF condo owners share the building's grid
-// connection so the peak-kW fee does not apply to them.
+// Phase H housing_type values that pay effekttariff. DEPRECATED in
+// Phase H+1 — kept for one-cycle fallback only.
 const EFFEKTTARIFF_HOUSING = ["townhouse_owner", "villa_owner", "other"];
 
-// Returns 0 unless housing_type triggers effekttariff. netLoad is the
-// 96-slot kW array; the day-window hourly peak is the same proxy the
-// backend uses (single-day stand-in for monthly top-3-hour average).
-// Phase H: legacy ownershipType still accepted as fallback for sessions
-// whose /api/profile response predates the housing_type field — only
-// 'owner' triggers the fee in that legacy path (matches the previous
-// behaviour).
-function effekttariffMonthly(netLoad, housingType, ownershipType) {
+// Phase H+1: building_type values that pay effekttariff *when the
+// participant is an owner*. Mirrors config.EFFEKTTARIFF_BUILDINGS.
+// Renters of any building type and condo (BRF) apartment owners
+// share the building's grid connection so the peak-kW fee does not
+// apply to them.
+const EFFEKTTARIFF_BUILDINGS = ["townhouse", "house", "other"];
+
+// Returns 0 unless effekttariff applies. netLoad is the 96-slot kW
+// array; the day-window hourly peak is the same proxy the backend
+// uses (single-day stand-in for monthly top-3-hour average).
+// Phase H+1 priority: building_type + is_owner -> housing_type ->
+// ownership_type. The legacy paths are kept for one cycle in case
+// older /api/profile responses are still in flight.
+function effekttariffMonthly(netLoad, buildingType, isOwner, housingType, ownershipType) {
   if (!Array.isArray(netLoad)) return 0;
   let applies;
-  if (housingType != null) {
+  if (buildingType != null && isOwner != null) {
+    applies = (isOwner === true)
+      && (EFFEKTTARIFF_BUILDINGS.indexOf(buildingType) !== -1);
+  } else if (housingType != null) {
     applies = EFFEKTTARIFF_HOUSING.indexOf(housingType) !== -1;
   } else {
     applies = ownershipType === "owner";

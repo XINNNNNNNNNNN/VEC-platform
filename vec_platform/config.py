@@ -93,7 +93,28 @@ EFFEKTTARIFF_DAY_END_HOUR = 22
 # so the peak-kW fee is collected at the building level, not the
 # household level. Mirrors Ellevio's billing scope for SE3 villa
 # customers (the 500k-household Jan 2026 roll-out).
+# DEPRECATED in Phase H+1 — kept for the one-cycle legacy housing_type
+# kwarg path in mock.calculate_bill. New code uses
+# EFFEKTTARIFF_BUILDINGS + the is_owner gate.
 EFFEKTTARIFF_HOUSING = frozenset({"townhouse_owner", "villa_owner", "other"})
+
+# Phase H+1: building_type (4 values) + is_owner (bool) replace the
+# Phase H 5-way housing_type. Effekttariff requires BOTH conditions:
+#   1) building_type is one of {townhouse, house, other}  (own meter)
+#   2) is_owner == True                                    (own meter)
+# Renting any building type means the landlord / building association
+# pays the peak-kW fee at the shared meter; renting house/townhouse
+# was not representable in Phase H and forced those ~3-5 % of Swedish
+# households into "Other".
+EFFEKTTARIFF_BUILDINGS = frozenset({"townhouse", "house", "other"})
+
+# Mock engine archetype map: the 4-option building_type collapses to
+# 2 engine archetypes (apartment / house). townhouse / house / other
+# all share the "house" archetype calibration (Phase N-fix-2/-4).
+APARTMENT_BUILDINGS = frozenset({"apartment"})
+HOUSE_BUILDINGS = frozenset({"townhouse", "house", "other"})
+
+BUILDING_TYPE_VALUES = ("apartment", "townhouse", "house", "other")
 
 # CO2 emission factor (kg/kWh) - Nordic mix
 CO2_FACTOR = 0.045

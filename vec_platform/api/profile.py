@@ -223,8 +223,19 @@ def get_profile(
         # Phase H: surface housing_type so JS effekttariff gate uses
         # the new 5-way classification. Replaces the role
         # ownership_type used to play in the live preview.
+        # DEPRECATED in Phase H+1 — kept for one-cycle rollback.
         "housing_type": (
             getattr(user_input, "housing_type", None)
+            if user_input is not None else None
+        ),
+        # Phase H+1: surface building_type + is_owner so the JS
+        # effekttariff gate matches the new 2-dimension split.
+        "building_type": (
+            getattr(user_input, "building_type", None)
+            if user_input is not None else None
+        ),
+        "is_owner": (
+            getattr(user_input, "is_owner", None)
             if user_input is not None else None
         ),
     }
@@ -368,9 +379,17 @@ def recalculate(
 
     bills = {}
     # Phase N F6: area_m2 from user_input drives tiered grid_fee.
-    # Phase H: housing_type gates effekttariff; ownership_type is the
-    # one-cycle legacy fallback.
+    # Phase H+1: building_type + is_owner gate effekttariff; legacy
+    # housing_type + ownership_type are one-cycle fallbacks.
     area_m2 = user_input.area_m2 if user_input is not None else None
+    building_type = (
+        getattr(user_input, "building_type", None)
+        if user_input is not None else None
+    )
+    is_owner = (
+        getattr(user_input, "is_owner", None)
+        if user_input is not None else None
+    )
     housing_type = (
         getattr(user_input, "housing_type", None)
         if user_input is not None else None
@@ -380,6 +399,8 @@ def recalculate(
         bill = calculation_engine.calculate_bill(
             profile, scenario,
             area_m2=area_m2,
+            building_type=building_type,
+            is_owner=is_owner,
             housing_type=housing_type,
             ownership_type=ownership_type,
         )

@@ -49,11 +49,14 @@
     },
     // Phase N F6: floor area for tiered grid fee in live recompute.
     areaM2: null,
-    // Phase H: 5-way housing classification gating effekttariff in
-    // the live recompute (Step 5 willingness toggle bill preview).
+    // Phase H+1: building shape + ownership flag gating the
+    // effekttariff in the live recompute (Step 5 willingness toggle
+    // bill preview).
+    buildingType: null,
+    isOwner: null,
+    // Phase H (DEPRECATED): legacy 5-way housing_type fallback.
     housingType: null,
-    // Phase N-2 legacy: ownership_type fallback for sessions whose
-    // /api/profile response predates the housing_type column.
+    // Pre-Phase-H legacy: ownership_type 2-way fallback.
     ownershipType: null,
   };
 
@@ -591,10 +594,11 @@
     // bill drops when the user shifts loads into cheap (PV-trough) hours.
     const retailArr = state.shadowPrices && state.shadowPrices.retail_price;
     // Phase N F6: areaM2 for tiered grid_fee, matching backend.
-    // Phase H: housingType for effekttariff parity; ownershipType
-    // legacy fallback.
+    // Phase H+1: buildingType + isOwner for effekttariff parity;
+    // legacy housingType + ownershipType passed as fallbacks.
     const adjusted = VECCompute.computeBillScenario(
       netNow, "vec_adjusted", retailArr, state.areaM2,
+      state.buildingType, state.isOwner,
       state.housingType, state.ownershipType
     );
 
@@ -656,11 +660,14 @@
     // bill from current net load — must use same fee structure as
     // backend). Falls back to step3 area if step2 missing it.
     state.areaM2 = step2.area_m2 ?? step3.area_m2 ?? null;
-    // Phase H: housing_type gates effekttariff in the live recompute.
-    // Same fallback chain as areaM2.
+    // Phase H+1: building_type + is_owner gate effekttariff in the
+    // live recompute. Same fallback chain as areaM2.
+    state.buildingType = step2.building_type ?? step3.building_type ?? null;
+    state.isOwner = step2.is_owner ?? step3.is_owner ?? null;
+    // Phase H legacy: housing_type fallback for sessions whose
+    // /api/profile response predates the building_type column.
     state.housingType = step2.housing_type ?? step3.housing_type ?? null;
-    // Phase N-2 legacy: ownership_type fallback for sessions whose
-    // /api/profile response predates the housing_type column.
+    // Pre-Phase-H legacy: ownership_type fallback of last resort.
     state.ownershipType = step2.ownership_type ?? step3.ownership_type ?? null;
     // Phase 3.X-fix-19: gate the Step 5 BESS placeholder row on the
     // same has_bess flag the Step 3 page reads (both come from

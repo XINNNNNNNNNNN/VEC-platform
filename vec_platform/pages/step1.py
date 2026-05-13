@@ -32,12 +32,24 @@ from vec_platform.pages.step7 import _EXPERT_FAMILIARITY_GATE
 
 # ==================== Step 1 ====================
 
-# Phase H: 5-way housing classification replacing the legacy 2-way
-# ownership_type. Mirrors E.ON Sweden consumer-survey categories
-# (Lägenhet / Radhus / Villa / Fritidshus / Annat) with the apartment
-# row split into renting vs. condo (BRF) so the SP experiment can
-# distinguish the two groups. Only the bottom three options trigger
-# effekttariff (config.EFFEKTTARIFF_HOUSING).
+# Phase H+1: two independent dimensions — building shape and ownership.
+# Replaces the Phase H 5-way single housing_type which couldn't represent
+# renting of house/townhouse (~3-5 % of Swedish households).
+_BUILDING_TYPE_OPTIONS = [
+    {"label": "Apartment (Lägenhet)", "value": "apartment"},
+    {"label": "Townhouse (Radhus)", "value": "townhouse"},
+    {"label": "House / villa (Villa/hus)", "value": "house"},
+    {"label": "Other (Fritidshus / annat)", "value": "other"},
+]
+
+_IS_OWNER_OPTIONS = [
+    {"label": "Renting (hyresgäst)", "value": False},
+    {"label": "Owner (ägare)", "value": True},
+]
+
+# Phase H: kept for any rollback or analyst tooling that still
+# references the 5-way collapse. Translated from the new (building,
+# is_owner) pair via _building_is_owner_to_housing below.
 _HOUSING_OPTIONS = [
     {"label": "Apartment (renting)", "value": "apt_renting"},
     {"label": "Apartment (condo / BRF owner)", "value": "apt_condo"},
@@ -46,20 +58,47 @@ _HOUSING_OPTIONS = [
     {"label": "Other (fritidshus / annat)", "value": "other"},
 ]
 
-# Phase H: kept for any rollback or analyst tooling that still
-# references the legacy 2-way split. New code should use
-# _HOUSING_OPTIONS and submit_step1's housing_type derivation.
+# Pre-Phase-H 2-way kept for the same reason — analysis pipelines
+# pre-dating Phase H still query ownership_type. Derived from
+# is_owner so the column stays populated.
 _OWNERSHIP_OPTIONS = [
     {"label": "Tenant (rent)", "value": "tenant"},
     {"label": "Owner", "value": "owner"},
 ]
 
 
-def _housing_to_ownership(housing_type):
-    """Phase H rollback shim: derive legacy ownership_type from
-    housing_type so the deprecated column stays populated for one
-    cycle. Renting apartment → tenant; everything else → owner."""
-    return "tenant" if housing_type == "apt_renting" else "owner"
+def _building_is_owner_to_housing(building_type, is_owner):
+    """Phase H+1 → Phase H rollback shim. Derives the deprecated
+    housing_type from the new (building_type, is_owner) pair so the
+    column stays populated for one cycle. Maps to the closest H label.
+    """
+    if building_type == "apartment":
+        return "apt_condo" if is_owner else "apt_renting"
+    if building_type == "townhouse" and is_owner:
+        return "townhouse_owner"
+    if building_type == "house" and is_owner:
+        return "villa_owner"
+    if building_type == "other" and is_owner:
+        return "other"
+    # Phase H didn't have a category for non-apartment renters
+    # (the gap that motivated H+1). Closest legacy label = villa_owner
+    # for the building shape, but is_owner=False semantically maps to
+    # the renting story — analysts should look at the new columns.
+    # We pick the "owner" labels here purely to keep the legacy
+    # column non-NULL; the new building_type + is_owner are the
+    # source of truth.
+    if building_type == "townhouse":
+        return "townhouse_owner"
+    if building_type == "house":
+        return "villa_owner"
+    if building_type == "other":
+        return "other"
+    return None
+
+
+def _is_owner_to_ownership(is_owner):
+    """Phase H+1 → pre-Phase-H ownership_type rollback shim."""
+    return "owner" if is_owner else "tenant"
 
 _DER_OPTIONS = [
     {"label": "Solar PV", "value": "pv"},
@@ -195,14 +234,22 @@ def step1_layout(session_id: str | None = None):
 
         dbc.Card([
             dbc.CardBody([
-                # Q1: Housing type (Phase H — 5-way replacing 2-way
-                # ownership). Same widget id (`ownership-type`) is
-                # preserved as `housing-type` below; toggle_step1_next
-                # and submit_step1 read State("housing-type", "value").
-                html.H5("Q1 · Which best describes your home?"),
+                # Phase H+1: Q1 is now two independent dimensions.
+                # Q1a: building shape (4 options); Q1b: own / rent.
+                # Replaces Phase H's 5-way housing_type so renting of
+                # house / townhouse is representable.
+                html.H5("Q1a · What kind of home do you live in?"),
                 dbc.RadioItems(
-                    id="housing-type",
-                    options=_HOUSING_OPTIONS,
+                    id="building-type",
+                    options=_BUILDING_TYPE_OPTIONS,
+                    value=None,
+                    className="mb-4",
+                ),
+
+                html.H5("Q1b · Do you own or rent your home?"),
+                dbc.RadioItems(
+                    id="is-owner",
+                    options=_IS_OWNER_OPTIONS,
                     value=None,
                     className="mb-4",
                 ),
@@ -260,20 +307,24 @@ def step1_layout(session_id: str | None = None):
 # safe against synthetic clicks.
 @dash_app.callback(
     Output("btn-next-step1", "disabled"),
-    Input("housing-type", "value"),
+    Input("building-type", "value"),
+    Input("is-owner", "value"),
     Input("area", "value"),
     Input("people", "value"),
     Input("occupation", "value"),
     Input("url", "search"),
 )
-def toggle_step1_next(housing_type, area, people, occupation, search):
+def toggle_step1_next(building_type, is_owner, area, people, occupation, search):
     """Enable Next only when every required field is filled.
 
-    Required: housing_type, area, people. occupation is conditionally
-    required (only when sessions.vec_familiarity is in the top 2 of the
-    5-pt scale, i.e. the same gate that decides whether Q5 is even
-    visible). der_options is *not* required — a household may legitimately
-    have none of PV/BESS/EV.
+    Required: building_type, is_owner, area, people. occupation is
+    conditionally required (only when sessions.vec_familiarity is in
+    the top 2 of the 5-pt scale, i.e. the same gate that decides
+    whether Q5 is even visible). der_options is *not* required — a
+    household may legitimately have none of PV/BESS/EV.
+
+    Phase H+1: is_owner is a bool — falsy check would mis-flag the
+    legitimate ``False`` choice, so check explicitly against None.
     """
     from vec_platform.models import Session as SessionModel
 
@@ -291,7 +342,8 @@ def toggle_step1_next(housing_type, area, people, occupation, search):
             _db.close()
 
     missing_required = (
-        not housing_type
+        not building_type
+        or is_owner is None
         or area is None
         or people is None
         or (occupation_required and not occupation)
@@ -313,7 +365,8 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
     Output("url", "search"),
     Output("step1-error", "children"),
     Input("btn-next-step1", "n_clicks"),
-    State("housing-type", "value"),
+    State("building-type", "value"),
+    State("is-owner", "value"),
     State("der-options", "value"),
     State("area", "value"),
     State("people", "value"),
@@ -321,7 +374,7 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step1(n_clicks, housing_type, der_options, area, people,
+def submit_step1(n_clicks, building_type, is_owner, der_options, area, people,
                  occupation, search):
     if not n_clicks:
         return no_update, no_update, no_update
@@ -347,7 +400,8 @@ def submit_step1(n_clicks, housing_type, der_options, area, people,
             _db.close()
 
     missing_required = (
-        not housing_type
+        not building_type
+        or is_owner is None
         or area is None
         or people is None
         or (occupation_required and not occupation)
@@ -355,10 +409,12 @@ def submit_step1(n_clicks, housing_type, der_options, area, people,
     if missing_required:
         return no_update, no_update, "Please answer all questions before continuing."
 
-    # Phase H: derive the deprecated ownership_type so the legacy
-    # column stays populated for one cycle (rollback safety). Drop
-    # this line in a future cleanup once nothing reads it.
-    ownership_type = _housing_to_ownership(housing_type)
+    # Phase H+1: derive deprecated housing_type (Phase H) and
+    # ownership_type (pre-Phase-H) so the legacy columns stay
+    # populated for one cycle (rollback safety). Drop these lines
+    # in a future cleanup once nothing reads them.
+    housing_type = _building_is_owner_to_housing(building_type, is_owner)
+    ownership_type = _is_owner_to_ownership(is_owner)
 
     der = der_options or []
     has_pv = "pv" in der
@@ -458,9 +514,12 @@ def submit_step1(n_clicks, housing_type, der_options, area, people,
             user_input = existing_ui
 
         # Step 1's own fields always reflect the latest submit.
-        # Phase H: housing_type is the new authoritative field;
-        # ownership_type is still written for one-cycle rollback
-        # safety (derived from housing_type via _housing_to_ownership).
+        # Phase H+1: building_type + is_owner are the new authoritative
+        # fields. housing_type (Phase H) and ownership_type (pre-Phase-H)
+        # are still written for one-cycle rollback safety, derived
+        # from the new pair via the legacy shim helpers.
+        user_input.building_type = building_type
+        user_input.is_owner = is_owner
         user_input.housing_type = housing_type
         user_input.ownership_type = ownership_type
         user_input.occupation = occupation
@@ -575,13 +634,15 @@ def submit_step1(n_clicks, housing_type, der_options, area, people,
         for scenario in _SCENARIOS:
             # Phase N F6: pass area_m2 so grid_fee uses the tiered
             # nätavgift structure instead of the deprecated flat 580.
-            # Phase N-2: effekttariff applies to housings with their
-            # own meter (config.EFFEKTTARIFF_HOUSING). Phase H gate
-            # now uses housing_type; ownership_type is passed too as
-            # a one-cycle fallback for engines that haven't migrated.
+            # Phase H+1: effekttariff gate is
+            # (is_owner AND building_type in EFFEKTTARIFF_BUILDINGS).
+            # Legacy housing_type + ownership_type passed along as
+            # one-cycle fallbacks.
             db.add(calculation_engine.calculate_bill(
                 profile, scenario,
                 area_m2=user_input.area_m2,
+                building_type=user_input.building_type,
+                is_owner=user_input.is_owner,
                 housing_type=user_input.housing_type,
                 ownership_type=user_input.ownership_type,
             ))
@@ -595,12 +656,12 @@ def submit_step1(n_clicks, housing_type, der_options, area, people,
     # eventually hand off to /step3 (the static customize page, which
     # is "Step 2" in the Phase 4-A 7-step flow — URL preserved per
     # decision 1B).
-    # Phase H: route renting apartments through the tenant disclaimer
-    # (same audience the disclaimer was written for — Swedish renters
-    # whose electricity is bundled into rent). BRF condo owners, town-
-    # house, villa, and "other" skip the disclaimer and go straight
-    # to info_calibration.
-    if housing_type == "apt_renting":
+    # Phase H+1: any renter (regardless of building type) goes
+    # through the tenant disclaimer — renting house / townhouse
+    # users also typically have electricity bundled into rent or
+    # limited utility control, so the disclaimer applies. Owners
+    # of any building type skip directly to info_calibration.
+    if is_owner is False:
         next_path = "/dash/tenant_disclaimer"
     else:
         next_path = "/dash/info_calibration"

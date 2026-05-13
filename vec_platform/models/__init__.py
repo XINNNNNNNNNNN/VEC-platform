@@ -132,22 +132,36 @@ class UserInput(Base):
     # owner -> villa_owner).
     ownership_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'tenant' | 'owner'
     # Phase H: 5-way housing classification mirroring E.ON Sweden's
-    # consumer-survey categories, with apartment split into
-    # renting/condo (BRF) so the SP experiment can distinguish
-    # eligibility. Drives:
-    #   - effekttariff applicability (config.EFFEKTTARIFF_HOUSING):
-    #     townhouse/villa/other have their own meter and pay the fee;
-    #     apt_renting + apt_condo share the building's grid connection
-    #     and do not.
-    #   - mock engine archetype: apt_* -> apartment (district heating);
-    #     everything else -> house (heat-pump assumption per N-fix-4).
-    #   - N-fix-5 single guard: (people==1 AND housing_type=='apt_renting')
-    #     still skips dishwasher and halves washing duration.
-    # Nullable: 172 pre-pilot dogfood sessions stay NULL and use the
-    # house-archetype fallback path; those rows are not used for
-    # pilot analysis.
+    # consumer-survey categories. DEPRECATED in Phase H+1 — kept for
+    # one-cycle rollback. New code reads building_type + is_owner
+    # below. mock.calculate_bill still accepts housing_type as a
+    # fallback kwarg.
     housing_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     # ^ 'apt_renting' | 'apt_condo' | 'townhouse_owner' | 'villa_owner' | 'other' | NULL
+
+    # Phase H+1: two independent dimensions — building shape and
+    # ownership — replace the Phase H 5-way single column. The Phase H
+    # collapse forced renting of house/townhouse (~3-5 % of Swedish
+    # households) into "Other" because there was no honest combination.
+    # Splitting gives 4 × 2 = 8 real combinations.
+    #
+    # Effekttariff (peak-kW fee): is_owner AND building_type in
+    # config.EFFEKTTARIFF_BUILDINGS (= {townhouse, house, other}).
+    #
+    # Archetype: building_type==apartment -> 'apartment' engine archetype;
+    # townhouse / house / other -> 'house' archetype (Phase N-fix-2 / -4
+    # calibrated). Ownership does NOT affect the archetype curve.
+    #
+    # N-fix-5 single guard: (people==1 AND building_type=='apartment'
+    # AND is_owner is False) — single condo owners keep their dishwasher.
+    #
+    # Both columns nullable: pre-Phase-H+1 sessions stay NULL on both
+    # and engine falls back to the house archetype with no effekt
+    # (is_owner=None is not True). Those rows are not pilot-grade.
+    building_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # ^ 'apartment' | 'townhouse' | 'house' | 'other' | NULL
+    is_owner: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # ^ True | False | NULL (not asked / legacy)
     # Step 1 Q5; drives sessions.expertise. Phase 3.X-fix-10 relaxed
     # this to nullable: Q5 is conditionally rendered (only when
     # vec_familiarity is in the top 2 of the 5-pt scale), so users

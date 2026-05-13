@@ -27,6 +27,8 @@ class CalculationEngine(ABC):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        building_type: str | None = None,
+        is_owner: bool | None = None,
         housing_type: str | None = None,
         ownership_type: str | None = None,
     ) -> BillBreakdown:
@@ -39,13 +41,18 @@ class CalculationEngine(ABC):
                 falls back to the lowest tier — callers should pass
                 ``user_input.area_m2`` whenever they have the
                 user_input row.
-            housing_type: Phase H — drives effekttariff applicability.
-                Values in ``config.EFFEKTTARIFF_HOUSING`` (townhouse_owner,
-                villa_owner, other) add the peak-kW fee; apt_renting,
-                apt_condo, and None skip it.
-            ownership_type: DEPRECATED — kept for one-cycle rollback
-                safety. Translated to housing_type when housing_type
-                is None (tenant -> apt_renting, owner -> villa_owner).
+            building_type: Phase H+1 — one of 'apartment' / 'townhouse'
+                / 'house' / 'other'. Drives the engine archetype
+                (apartment vs house) and, combined with is_owner, the
+                effekttariff gate.
+            is_owner: Phase H+1 — True if the participant owns their
+                housing. Effekttariff applies only when
+                ``is_owner AND building_type in EFFEKTTARIFF_BUILDINGS``.
+            housing_type: DEPRECATED (Phase H) — kept as a one-cycle
+                fallback. Translated to (building_type, is_owner) via
+                a fixed map when those are missing.
+            ownership_type: DEPRECATED (pre-Phase-H) — kept as a
+                fallback for very old rows.
 
         Returns:
             BillBreakdown model with cost breakdown
