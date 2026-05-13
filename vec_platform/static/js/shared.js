@@ -104,14 +104,89 @@ const VECCompute = (() => {
     return out;
   }
 
+  // Phase O-fix-2: BESS device keys that live alongside other devices
+  // in state.placed but are NOT summed into flexible_load. The bill
+  // dispatcher in applyBessDispatch handles them separately because
+  // storage redirects energy flow rather than consuming it.
+  const BESS_DEVICE_KEYS = new Set(["bess_charge#1", "bess_discharge#1"]);
+
   function computeNetLoad(baseLoad, deviceArrays, pvGeneration) {
     const net = new Array(SLOTS_PER_DAY);
     for (let i = 0; i < SLOTS_PER_DAY; i++) {
       let flex = 0;
-      for (const name in deviceArrays) flex += deviceArrays[name][i];
+      for (const name in deviceArrays) {
+        if (BESS_DEVICE_KEYS.has(name)) continue;  // BESS handled by dispatcher
+        flex += deviceArrays[name][i];
+      }
       net[i] = baseLoad[i] + flex - pvGeneration[i];
     }
     return net;
+  }
+
+  // Phase O-fix-2: BESS daily dispatch (mirrors engine/mock.py
+  // _apply_bess_dispatch). Returns a new netLoad array with the
+  // priority logic applied:
+  //   charge slot: own_load gets PV first; remaining PV (capped at
+  //     charge_per_slot) goes to BESS; grid backfills.
+  //   discharge slot: BESS supplies own_load up to whatever load
+  //     remains after PV; surplus BESS energy exports to grid.
+  // Daily cycle is fixed 10 kWh charge -> 9 kWh discharge regardless
+  // of the user's bess_kwh capacity setting (Phase O-fix-2 scope).
+  //
+  // chargeArr / dischargeArr are 96-slot arrays from state.placed
+  // (BESS_POWER_KW in the window, 0 elsewhere). Either may be null
+  // when has_bess is false or the slot is unscheduled.
+  const BESS_DURATION_SLOTS = 16;
+  const BESS_CHARGE_KWH_PER_DAY = 10.0;
+  const BESS_DISCHARGE_KWH_PER_DAY = 9.0;
+
+  function _firstNonzeroSlot(arr) {
+    if (!Array.isArray(arr)) return null;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] > 0) return i;
+    }
+    return null;
+  }
+
+  function applyBessDispatch(netLoad, pvGen, chargeArr, dischargeArr) {
+    const chargeStart = _firstNonzeroSlot(chargeArr);
+    const dischargeStart = _firstNonzeroSlot(dischargeArr);
+    if (chargeStart === null && dischargeStart === null) return netLoad;
+
+    const chargePerSlot = BESS_CHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS;
+    const dischargePerSlot = BESS_DISCHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS;
+    const adjusted = netLoad.slice();
+
+    // Reconstruct own_load (pre-PV demand) per slot.
+    const ownLoad = new Array(SLOTS_PER_DAY);
+    for (let i = 0; i < SLOTS_PER_DAY; i++) {
+      ownLoad[i] = netLoad[i] + pvGen[i];
+    }
+
+    if (chargeStart !== null) {
+      for (let k = 0; k < BESS_DURATION_SLOTS; k++) {
+        const i = (chargeStart + k) % SLOTS_PER_DAY;
+        const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
+        const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
+        const pvUsedForLoad = Math.min(pvKwh, loadKwh);
+        const pvRemaining = pvKwh - pvUsedForLoad;
+        const pvToBess = Math.min(pvRemaining, chargePerSlot);
+        const gridToBess = Math.max(0, chargePerSlot - pvToBess);
+        adjusted[i] += (pvToBess + gridToBess) / SLOT_HOURS;
+      }
+    }
+    if (dischargeStart !== null) {
+      for (let k = 0; k < BESS_DURATION_SLOTS; k++) {
+        const i = (dischargeStart + k) % SLOTS_PER_DAY;
+        const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
+        const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
+        const loadAfterPv = Math.max(0, loadKwh - pvKwh);
+        const bessToLoad = Math.min(dischargePerSlot, loadAfterPv);
+        const bessToGrid = Math.max(0, dischargePerSlot - bessToLoad);
+        adjusted[i] -= (bessToLoad + bessToGrid) / SLOT_HOURS;
+      }
+    }
+    return adjusted;
   }
 
   // Mirrors vec_platform/engine/mock.py MockEngine.calculate_bill so the JS
@@ -265,6 +340,9 @@ const VECCompute = (() => {
     findMinSumWindow,
     findMaxSumWindow,
     bessSchedule,
+    applyBessDispatch,        // Phase O-fix-2
+    BESS_DEVICE_KEYS,         // Phase O-fix-2: name set
+    BESS_DURATION_SLOTS,      // Phase O-fix-2
   };
 })();
 

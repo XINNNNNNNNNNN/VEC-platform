@@ -75,15 +75,14 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
-    // Phase 3.X-fix-18: BESS placeholder track. Rendered only when the
-    // session's user_inputs.has_bess is true. Display-only — no drag,
-    // no charge/discharge simulation. Auto-managed dispatch will be
-    // added in a later refactor phase.
-    // Phase 3.X-fix-19: row body now shows 96 slots tinted by the
-    // charge / discharge schedule derived from spot prices.
-    if (state.hasBess) {
-      container.appendChild(VECBessUI.makeRow(state.spotPrices));
-    }
+    // Phase O-fix-2: BESS auto-managed placeholder REMOVED. BESS
+    // charge / discharge windows are now rendered as two standard
+    // draggable device blocks (bess_charge#1, bess_discharge#1) via
+    // the same makeBlock + state.placed path as cooking / EV. The
+    // priority dispatch (PV -> own_load -> BESS -> grid for charge;
+    // BESS -> own_load -> grid for discharge) is applied at bill
+    // computation time by VECCompute.applyBessDispatch (mirrors the
+    // backend engine/mock.py _apply_bess_dispatch).
 
     // One row per placed device instance, in a stable order so the
     // visual doesn't jump. Order is base-type order × instance number.
@@ -171,6 +170,70 @@
   }
 
 
+  // ---- Phase O-fix-2: BESS overlap resolution ----
+  // Two BESS windows (bess_charge#1 / bess_discharge#1) must not
+  // overlap — a battery cannot charge and discharge simultaneously.
+  // When the user releases a BESS block on top of the other window,
+  // push the just-released block to the nearest non-overlapping
+  // position. The "just-released" block is the active actor (the
+  // user clearly intended that as the new position), so the OTHER
+  // block stays put — we move the dragged one out of the way.
+  function maybeResolveBessOverlap(droppedName) {
+    if (droppedName !== "bess_charge#1" && droppedName !== "bess_discharge#1") {
+      return;
+    }
+    const otherName = droppedName === "bess_charge#1"
+      ? "bess_discharge#1"
+      : "bess_charge#1";
+    const dropped = state.placed[droppedName];
+    const other = state.placed[otherName];
+    if (!dropped || !other) return;  // single-block case, no conflict
+
+    if (!rangesOverlap(dropped.start, dropped.duration, other.start, other.duration)) {
+      return;
+    }
+    const newStart = findNearestNonOverlap(
+      dropped.start, dropped.duration, other.start, other.duration,
+    );
+    if (newStart !== dropped.start) {
+      dropped.start = newStart;
+      // No toast library wired up — surface the auto-push via a
+      // brief console note that pilot operators can inspect.
+      console.info(
+        `Phase O-fix-2: ${droppedName} auto-pushed to slot ${newStart} ` +
+        `to avoid overlap with ${otherName} (${other.start}-${other.start + other.duration}).`
+      );
+    }
+  }
+
+  function rangesOverlap(s1, d1, s2, d2) {
+    // Wrap-aware overlap check on a circular 0..SLOTS_PER_DAY domain.
+    // Expand each range into a set of occupied slot indices and look
+    // for intersection. 16 + 16 = 32 slots max — cheap.
+    const set1 = new Set();
+    for (let k = 0; k < d1; k++) set1.add((s1 + k) % SLOTS_PER_DAY);
+    for (let k = 0; k < d2; k++) {
+      if (set1.has((s2 + k) % SLOTS_PER_DAY)) return true;
+    }
+    return false;
+  }
+
+  function findNearestNonOverlap(droppedStart, droppedDur, otherStart, otherDur) {
+    // Try increasing start (push later); fall back to decreasing
+    // (push earlier); finally take the slot just past the other
+    // window's end. Wrap-aware throughout.
+    for (let delta = 1; delta <= SLOTS_PER_DAY; delta++) {
+      const candidate = (droppedStart + delta) % SLOTS_PER_DAY;
+      if (!rangesOverlap(candidate, droppedDur, otherStart, otherDur)) {
+        return candidate;
+      }
+    }
+    // Fallback: position the dropped block immediately after the
+    // other window. With 96-slot day and 16-slot windows this is
+    // always feasible (32 occupied << 96).
+    return (otherStart + otherDur) % SLOTS_PER_DAY;
+  }
+
   // ---- Drag handling ----
   function attachDrag(block, name) {
     let startX = 0;
@@ -245,6 +308,11 @@
       if (!block.classList.contains("dragging")) return;
       block.classList.remove("dragging");
       try { block.releasePointerCapture(e.pointerId); } catch (_) {}
+      // Phase O-fix-2: BESS overlap check. If the user just released
+      // a BESS block on top of the other BESS window, push the
+      // just-released block (the "later action") to the nearest
+      // non-overlapping start. Both windows are 16 slots (4 h).
+      maybeResolveBessOverlap(name);
       const newStart = state.placed[name].start;
       const newEnd = newStart + state.placed[name].duration;
       if (newStart !== preDragStart) {
@@ -326,8 +394,13 @@
   // ---- Phase 3.7-pre: My devices list + Add dropdown ----
   // Render order shared with renderTimeline() so the list and the
   // timeline visually agree.
+  // Phase O-fix-2: BESS schedule keys appended so the timeline /
+  // device list iterate them via the same path as cooking / EV.
+  // The makeBlock renderer reads load_kw + start + duration from
+  // state.placed[name], identical to other devices.
   const DEVICE_LIST_ORDER = ["cooking", "dishwasher", "washing_machine",
-                             "dryer", "oven_baking", "ev_charger"];
+                             "dryer", "oven_baking", "ev_charger",
+                             "bess_charge", "bess_discharge"];
 
   function renderDeviceList() {
     const ul = $("device-instance-list");
@@ -517,13 +590,23 @@
     };
     Plotly.react("load-chart", traces, layout, { displayModeBar: false });
 
+    // Phase O-fix-2: apply BESS daily dispatch so the live preview
+    // reflects the charge/discharge windows the user just dragged.
+    // Mirrors the backend engine/mock.py _apply_bess_dispatch.
+    const adjustedNet = VECCompute.applyBessDispatch(
+      netLoad,
+      state.pvGeneration,
+      deviceArrays["bess_charge#1"],
+      deviceArrays["bess_discharge#1"],
+    );
+
     // Phase K-2 F4: pass the per-slot retail curve so live bill
     // updates while dragging a device reflect the actual cost at
     // each time-of-day, not a flat average.
     // Phase N F6: also pass areaM2 so grid_fee tier matches backend.
     // Phase O: pass buildingType (informational; effekttariff removed).
     const bill = VECCompute.computeBillScenario(
-      netLoad, "no_vec", state.spotPrices, state.areaM2, state.buildingType
+      adjustedNet, "no_vec", state.spotPrices, state.areaM2, state.buildingType
     );
     renderBillCard(bill);
   }

@@ -107,6 +107,33 @@ const DEVICE_CATALOG = {
     load_kw: 2.5,
     default_include: false,   // user must Add to enable
   },
+  // Phase O-fix-2: BESS schedule rendered as two standard draggable
+  // blocks (charge + discharge). Both arrays carry BESS_POWER_KW
+  // (2.5 kW) for 16 slots; the actual daily energy (10 kWh charge,
+  // 9 kWh discharge after round-trip loss) is computed by the bill
+  // dispatcher in shared.js / engine/mock.py. Neither block is
+  // summed into flexible_load — storage redirects energy, it does
+  // not consume it. The two windows must not overlap; the overlap
+  // handler in timeline.js auto-pushes the most-recently-dragged
+  // block to the nearest non-overlapping position.
+  bess_charge: {
+    label: "Battery charging",
+    color: "#22C55E",        // green
+    draggable: true,
+    default_start: 44,       // 11:00 (PV-surplus midday)
+    default_duration: 16,    // 4 h
+    load_kw: 2.5,
+    default_include_when_has_bess: true,
+  },
+  bess_discharge: {
+    label: "Battery discharging",
+    color: "#3B82F6",        // blue
+    draggable: true,
+    default_start: 72,       // 18:00 (evening retail peak)
+    default_duration: 16,    // 4 h
+    load_kw: 2.5,
+    default_include_when_has_bess: true,
+  },
   ev_charger: {
     label: "EV charger",
     color: "#A855F7",  // purple

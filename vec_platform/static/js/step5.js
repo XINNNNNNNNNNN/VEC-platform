@@ -80,9 +80,12 @@
   // water_heater dropped) and dryer/oven_baking added. Order matches
   // DEVICE_CATALOG declaration so the rendered timeline / cards mirror
   // Step 3's "My devices" list.
+  // Phase O-fix-2: BESS schedule keys appended so Step 5 renders the
+  // two BESS windows as standard timeline rows + willingness cards.
   const DEVICE_ROW_ORDER = [
     "cooking", "dishwasher", "washing_machine",
     "dryer", "oven_baking", "ev_charger",
+    "bess_charge", "bess_discharge",
   ];
 
   function renderTimeline() {
@@ -99,13 +102,10 @@
     rigidRow.appendChild(rigidLabel);
     container.appendChild(rigidRow);
 
-    // Phase 3.X-fix-19: BESS placeholder row, identical schedule to
-    // Step 3 (both compute from the same retail-price array via the
-    // shared VECBessUI.makeRow helper).
-    if (state.hasBess) {
-      const prices = state.shadowPrices && state.shadowPrices.retail_price;
-      container.appendChild(VECBessUI.makeRow(prices));
-    }
+    // Phase O-fix-2: BESS auto-managed placeholder REMOVED here too
+    // — Step 5's BESS rows now come from bess_charge#1 / bess_discharge#1
+    // entries in state.placed (carried over from Step 3) via the same
+    // device-block path as cooking / EV.
 
     // v3.X-fix-5b: expand each base type to its #1..MAX_INSTANCES_PER_BASE
     // instances so users see one timeline row per instance. Row label
@@ -520,7 +520,16 @@
   function refreshChart() {
     const x = hours();
     const deviceArrays = VECCompute.buildDeviceArrays(state.placed);
-    const netNow = VECCompute.computeNetLoad(state.baseLoad, deviceArrays, state.pvGeneration);
+    // Phase O-fix-2: computeNetLoad excludes BESS keys; applyBessDispatch
+    // overlays the priority logic so the green "respond" line shows the
+    // dragged BESS schedule's effect on grid import/export.
+    const netBase = VECCompute.computeNetLoad(state.baseLoad, deviceArrays, state.pvGeneration);
+    const netNow = VECCompute.applyBessDispatch(
+      netBase,
+      state.pvGeneration,
+      deviceArrays["bess_charge#1"],
+      deviceArrays["bess_discharge#1"],
+    );
 
     const traces = [
       {

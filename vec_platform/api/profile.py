@@ -323,12 +323,20 @@ def recalculate(
     # ``Array.isArray`` guards; Step 2's chart uses an explicit allowlist).
     devices["__scale_factor__"] = scale
 
+    # Phase O-fix-2: BESS schedule keys live in devices alongside
+    # cooking / EV but are NOT loads — storage redirects flow. They
+    # are excluded from flexible_load here; the bill dispatcher
+    # (mock._apply_bess_dispatch) folds their effect into net_load
+    # at bill-computation time.
+    _BESS_KEYS = ("bess_charge#1", "bess_discharge#1")
     flexible_load = [
         # Skip non-array metadata (e.g. __scale_factor__) when summing.
         sum(
             devices[name][i]
             for name in devices
-            if name != "base_load" and not name.startswith("__")
+            if name != "base_load"
+            and not name.startswith("__")
+            and name not in _BESS_KEYS
         )
         for i in range(SLOTS_PER_DAY)
     ]

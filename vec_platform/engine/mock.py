@@ -12,8 +12,23 @@ from vec_platform.config import (
     GRID_FEE_VARIABLE_RATE,
     grid_fee_fixed,
     APARTMENT_BUILDINGS,
+    BESS_POWER_KW,
+    BESS_DURATION_SLOTS,
+    BESS_CHARGE_KWH_PER_DAY,
+    BESS_DISCHARGE_KWH_PER_DAY,
+    BESS_CHARGE_DEFAULT_START,
+    BESS_DISCHARGE_DEFAULT_START,
     SLOTS_PER_DAY,
 )
+
+
+# Phase O-fix-2: device keys carrying the BESS schedule. They live in
+# profile.devices alongside cooking#1 / dishwasher#1 / etc. so the JS
+# timeline can render them as draggable blocks via the same code path.
+# They are NOT summed into flexible_load — energy storage redirects
+# flow rather than consuming it, so the priority dispatch in
+# calculate_bill handles their effect explicitly.
+BESS_DEVICE_KEYS = ("bess_charge#1", "bess_discharge#1")
 # Phase N F9: RETAIL_PRICE_BASE and GRID_FEE_MONTHLY are deprecated
 # (replaced by _SE3_SUMMER_RETAIL_SEK_PER_KWH per-slot curve and the
 # tiered grid_fee_fixed + GRID_FEE_VARIABLE_RATE respectively). Both
@@ -88,8 +103,18 @@ class MockEngine(CalculationEngine):
 
         devices = self._get_devices(user_input)
         base_load = devices["base_load"]
+        # Phase O-fix-2: BESS schedule entries (bess_charge#1 /
+        # bess_discharge#1) are stored alongside other devices so the
+        # timeline can render them as draggable blocks, but they are
+        # NOT summed into flexible_load. Storage redirects energy
+        # flow rather than consuming it; the priority dispatch in
+        # calculate_bill handles their effect on grid import/export.
         flexible_load = [
-            sum(devices[name][i] for name in devices if name != "base_load")
+            sum(
+                devices[name][i]
+                for name in devices
+                if name != "base_load" and name not in BESS_DEVICE_KEYS
+            )
             for i in range(SLOTS_PER_DAY)
         ]
         pv_generation = self._get_pv_generation(user_input)
@@ -141,6 +166,14 @@ class MockEngine(CalculationEngine):
         pv_gen = json.loads(profile.pv_generation) if isinstance(profile.pv_generation, str) else profile.pv_generation
 
         SLOT_HOURS = 0.25  # 15 minutes
+
+        # Phase O-fix-2: apply BESS dispatch on top of the pre-BESS
+        # net_load. Returns a new per-slot net_load that reflects the
+        # priority logic (PV -> own_load -> BESS -> grid for charge;
+        # BESS -> own_load -> grid for discharge). If no BESS schedule
+        # is present (has_bess=False or no schedule slot), returns
+        # net_load unchanged.
+        net_load = self._apply_bess_dispatch(profile, net_load, pv_gen)
 
         # ---- Per-slot integration against the time-varying retail curve ----
         # Phase K-2 F4. Only positive net_load (= electricity bought from
@@ -217,6 +250,115 @@ class MockEngine(CalculationEngine):
             feed_in_income=round(feed_in_income, 2),
             net_cost=round(net_cost, 2),
         )
+
+    @staticmethod
+    def _bess_window_from_array(arr) -> int | None:
+        """Return the start slot of a BESS schedule array, or None.
+
+        BESS devices live in ``profile.devices`` as 96-slot arrays with
+        BESS_POWER_KW in BESS_DURATION_SLOTS slots and 0 elsewhere.
+        Returns the index of the first non-zero slot so the dispatch
+        loop can re-derive the window without depending on a separate
+        column. Returns None if the array is empty / all-zero (no BESS
+        scheduled).
+        """
+        if not isinstance(arr, list) or not arr:
+            return None
+        for i, v in enumerate(arr):
+            if v > 0:
+                return i
+        return None
+
+    def _apply_bess_dispatch(self, profile, net_load, pv_gen):
+        """Phase O-fix-2: adjust net_load per BESS schedule.
+
+        Reads bess_charge#1 and bess_discharge#1 from profile.devices
+        (each a 96-slot array, BESS_POWER_KW in the window, 0 outside),
+        then applies the priority logic per slot:
+
+          charge slot  : own_load gets PV first; remaining PV up to
+                         charge_per_slot goes to BESS; grid backfills
+                         to charge_per_slot.
+          discharge slot: BESS supplies own_load up to whatever load
+                         remains after PV; surplus BESS energy exports
+                         to grid.
+
+        Effect on net_load:
+          - grid -> BESS (charge slot): net_load[i] += grid_to_bess
+          - PV -> BESS  (charge slot): net_load[i] += pv_to_bess
+                          (PV that would have exported now stays in)
+          - BESS -> own_load (discharge): net_load[i] -= bess_to_load
+                          (load satisfied without grid import)
+          - BESS -> grid   (discharge): net_load[i] -= bess_to_grid
+                          (additional export)
+
+        Daily energy: 10 kWh charge -> 9 kWh discharge (round-trip 0.9).
+        bess_kwh capacity is NOT consulted in this phase; the cycle is
+        fixed regardless of user-configured battery size.
+        """
+        devices_raw = getattr(profile, "devices", None)
+        if not devices_raw:
+            return net_load
+        try:
+            devices = (
+                json.loads(devices_raw)
+                if isinstance(devices_raw, str)
+                else devices_raw
+            )
+        except (TypeError, ValueError):
+            return net_load
+
+        charge_arr = devices.get("bess_charge#1")
+        discharge_arr = devices.get("bess_discharge#1")
+        charge_start = self._bess_window_from_array(charge_arr)
+        discharge_start = self._bess_window_from_array(discharge_arr)
+        if charge_start is None and discharge_start is None:
+            return net_load
+
+        SLOT_HOURS = 0.25
+        charge_per_slot_kwh = BESS_CHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS
+        discharge_per_slot_kwh = BESS_DISCHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS
+
+        # Reconstruct own_load (pre-PV demand) per slot to drive the
+        # priority decisions. net_load = own_load - pv, so:
+        own_load = [net_load[i] + pv_gen[i] for i in range(SLOTS_PER_DAY)]
+
+        adjusted = list(net_load)
+
+        # ---- Charge window ----
+        if charge_start is not None:
+            for k in range(BESS_DURATION_SLOTS):
+                i = (charge_start + k) % SLOTS_PER_DAY
+                # Energy this slot in kWh.
+                pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
+                load_kwh = max(0.0, own_load[i]) * SLOT_HOURS
+                # Priority 1: PV serves own_load.
+                pv_used_for_load = min(pv_kwh, load_kwh)
+                pv_remaining = pv_kwh - pv_used_for_load
+                # Priority 2: PV surplus tops up BESS.
+                pv_to_bess = min(pv_remaining, charge_per_slot_kwh)
+                # Priority 3: grid backfills BESS to the per-slot target.
+                grid_to_bess = max(0.0, charge_per_slot_kwh - pv_to_bess)
+                # net_load is in kW (energy / 0.25h).
+                # PV captured by BESS would otherwise have exported: net_load
+                # becomes less negative -> add pv_to_bess / SLOT_HOURS.
+                adjusted[i] += (pv_to_bess + grid_to_bess) / SLOT_HOURS
+
+        # ---- Discharge window ----
+        if discharge_start is not None:
+            for k in range(BESS_DURATION_SLOTS):
+                i = (discharge_start + k) % SLOTS_PER_DAY
+                pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
+                load_kwh = max(0.0, own_load[i]) * SLOT_HOURS
+                # Remaining own_load after PV has been applied.
+                load_after_pv = max(0.0, load_kwh - pv_kwh)
+                # Priority 1: BESS supplies own_load (cap at per-slot rate).
+                bess_to_load = min(discharge_per_slot_kwh, load_after_pv)
+                # Priority 2: BESS surplus exports to grid.
+                bess_to_grid = max(0.0, discharge_per_slot_kwh - bess_to_load)
+                adjusted[i] -= (bess_to_load + bess_to_grid) / SLOT_HOURS
+
+        return adjusted
 
     def get_shadow_prices(self, session_id: str) -> ShadowPrices:
         """Return per-slot prices for Step 4/5 visualisation.
@@ -391,6 +533,25 @@ class MockEngine(CalculationEngine):
         # there or drag it into peak hours.
         if user_input.has_ev:
             devices["ev_charger#1"] = self._device_block(88, 88 + 14, 2.3)
+
+        # Phase O-fix-2: BESS charge + discharge windows. Stored as
+        # 96-slot arrays of 2.5 kW (BESS_POWER_KW) so the timeline
+        # renders them as standard draggable blocks. They are
+        # intentionally NOT summed into flexible_load by
+        # generate_profile — energy storage redirects flow rather than
+        # consuming it, so the priority dispatch in calculate_bill
+        # handles the bill effect explicitly.
+        if user_input.has_bess:
+            devices["bess_charge#1"] = self._device_block(
+                BESS_CHARGE_DEFAULT_START,
+                BESS_CHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                BESS_POWER_KW,
+            )
+            devices["bess_discharge#1"] = self._device_block(
+                BESS_DISCHARGE_DEFAULT_START,
+                BESS_DISCHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                BESS_POWER_KW,
+            )
 
         return devices
 

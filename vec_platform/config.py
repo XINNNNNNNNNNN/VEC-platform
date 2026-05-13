@@ -74,6 +74,32 @@ VEC_INTERNAL_SELL = 1.05
 # conservative mid-2025 figure that under-estimated post-cut value.
 FEED_IN_PRICE = 0.55  # SEK/kWh
 
+# ---- Phase O-fix-2: BESS daily dispatch ----
+# Two user-draggable windows (charge + discharge), each 4 hours
+# (16 quarter-slots). Round-trip efficiency 0.9 (IEC 62933 industry
+# standard) — daily cycle 10 kWh charge produces 9 kWh discharge.
+#
+# Visually both windows are drawn at 2.5 kW (consistent block height
+# in the timeline); the actual energy balance is computed from
+# CHARGE_KWH_PER_DAY / DISCHARGE_KWH_PER_DAY inside the dispatch
+# logic, where the round-trip loss is bookkept. bess_kwh capacity
+# from Step 1 / Step 3 calibration does NOT affect the daily cycle
+# in this phase; it is retained as an informational user input.
+# Future Phase K-3 may add user-controlled cycle depth scaling
+# with bess_kwh.
+BESS_DEFAULT_CAPACITY_KWH = 10.0
+BESS_POWER_KW = 2.5
+BESS_DURATION_SLOTS = 16
+BESS_EFFICIENCY = 0.9
+BESS_CHARGE_KWH_PER_DAY = 10.0
+BESS_DISCHARGE_KWH_PER_DAY = 9.0
+
+# Default schedule slots (user can drag in Step 3 timeline).
+# Charge default: PV-surplus midday window (slot 44 = 11:00).
+# Discharge default: evening retail peak (slot 72 = 18:00).
+BESS_CHARGE_DEFAULT_START = 44
+BESS_DISCHARGE_DEFAULT_START = 72
+
 # ---- Phase N-2 effekttariff REMOVED in Phase O ----
 # The Swedish 2026 DSO effekttariff mandate was cancelled on
 # 2026-03-13. Ellevio reverted 2026-06-01, Mälarenergi 2026-07-01,
