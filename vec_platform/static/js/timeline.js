@@ -88,10 +88,13 @@
     // visual doesn't jump. Order is base-type order × instance number.
     // v3.X-fix-5b: expand each base to up to MAX_INSTANCES_PER_BASE
     // rows so users can see / drag multiple cookings, dishwashers, etc.
-    const order = ["cooking", "dishwasher", "washing_machine",
-                   "dryer", "oven_baking", "ev_charger"];
-
-    for (const baseName of order) {
+    // Phase O-fix-4 Bug 1: use the module-level DEVICE_LIST_ORDER so
+    // the timeline rows include bess_charge / bess_discharge (Phase
+    // O-fix-2). The previous local ``order`` array was a stale copy
+    // from before Phase O-fix-2 and missed both BESS keys, causing
+    // BESS rows to disappear from the timeline even though they
+    // appeared in the "My devices" list and the chart legend.
+    for (const baseName of DEVICE_LIST_ORDER) {
       for (let n = 1; n <= MAX_INSTANCES_PER_BASE; n++) {
         const name = `${baseName}#${n}`;
         if (!(name in state.placed)) continue;
@@ -871,9 +874,19 @@
   // baseline arrays back from /api/profile (which now re-derives PV
   // from user_inputs.pv_kwp) and refresh the live chart + bill so
   // the participant sees the effect of changing PV capacity right
-  // away. Today only PV affects state.pvGeneration; BESS / EV
-  // capacities will be wired in D-2 / D-3 and would extend this
-  // function then.
+  // away.
+  //
+  // Phase O-fix-4 Bug 2: ALSO reseed state.placed for any device
+  // whose shape changed via cascade (ev_charger duration scales with
+  // ev_kwh; bess_charge / bess_discharge could change power; etc.).
+  // The previous version refreshed baseLoad / pvGeneration but left
+  // state.placed pointing at stale device arrays, so a user changing
+  // ev_kwh from 8 to 20 in the Step 3 calibration panel saw the
+  // backend bill update in the DB but the on-page bill card stayed
+  // at the old number. Fine-grained merge: preserve the user's drag
+  // start_slot (they may have moved a block before opening the
+  // calibration panel), update duration + load_kw from the fresh
+  // profile, drop any device no longer present.
   async function refetchBaselineAndRefresh() {
     if (!state.sessionId) return;
     let profile;
@@ -891,6 +904,44 @@
     state.areaM2 = profile.area_m2 ?? state.areaM2;
     // Phase O: same defensive refresh for building_type.
     state.buildingType = profile.building_type ?? state.buildingType;
+
+    // Phase O-fix-4: merge profile.devices into state.placed.
+    // - For each device key in the fresh profile: keep the existing
+    //   start (user's drag position) but adopt the new duration and
+    //   load_kw (which the cascade may have changed).
+    // - For each device key in state.placed that no longer exists in
+    //   the fresh profile: drop it (the participant toggled the
+    //   corresponding has_X off).
+    if (profile.devices && typeof profile.devices === "object") {
+      for (const [name, arr] of Object.entries(profile.devices)) {
+        if (name === "base_load") continue;
+        if (name.startsWith("__")) continue;  // metadata e.g. __scale_factor__
+        if (!Array.isArray(arr)) continue;
+        const catalogMeta = DEVICE_CATALOG[stripInstanceSuffix(name)];
+        if (!catalogMeta) continue;
+        const bounds = VECCompute.extractBounds(arr);
+        if (!bounds) continue;  // empty array, can't derive shape
+        const existing = state.placed[name];
+        const start = existing && existing.start != null
+          ? existing.start          // preserve user's drag
+          : bounds.start;           // first seed
+        const load_kw = catalogMeta.load_kw ?? arr[bounds.start];
+        state.placed[name] = {
+          start,
+          duration: bounds.duration,
+          load_kw,
+        };
+      }
+      // Drop devices that no longer exist on the server (e.g. user
+      // unchecked has_bess in Step 1 — though that path normally
+      // cascades through a different code path; this is defensive).
+      for (const name of Object.keys(state.placed)) {
+        if (!(name in profile.devices)) {
+          delete state.placed[name];
+        }
+      }
+    }
+
     // Phase L: re-anchor the "vs. baseline" delta on the calibrated
     // state. Without this, dragging a device after raising PV from 5
     // to 15 would show a saving that includes the calibration delta
@@ -905,6 +956,12 @@
       profile.net_load, "no_vec", state.spotPrices,
       state.areaM2, state.buildingType
     );
+    // Phase O-fix-4: re-render timeline + device list so the new
+    // duration / load_kw appear visually, in addition to refreshing
+    // the chart + bill.
+    renderTimeline();
+    renderDeviceList();
+    renderAddSelect();
     refreshChartAndBill();
   }
 
