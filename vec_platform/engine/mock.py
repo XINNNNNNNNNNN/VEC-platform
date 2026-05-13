@@ -376,15 +376,21 @@ class MockEngine(CalculationEngine):
 
         # v3 dropped the heating question along with the water_heater device.
 
-        # EV charging late afternoon (16:00-20:00, 4h).
-        # Kept non-wrapping so the Step 3 timeline can show it as a single block.
+        # EV charging overnight (22:00-01:30, 3.5h, wraps midnight).
         # Phase N-fix-3: NOT flex-scaled (single vehicle, not per-person).
-        # Phase N-fix-4: duration halved 32→16 slots (8h→4h). Real
-        # Swedish commuter EV draws ~9 kWh/day (50 km × 0.18 kWh/km),
-        # which 4h × 3.7 kW = 14.8 kWh comfortably covers with headroom.
-        # The 8h default was producing 888 kWh/mo (3.3x real ~270).
+        # Phase O-fix-1: calibrated to Swedish villa+EV household reality.
+        # Power 2.3 kW = Schuko 10A nödladdning (Elsäkerhetsverket standard,
+        # most prevalent before wallbox installation); duration 14 slots
+        # (3.5h) × 2.3 kW × 0.25h = 8.05 kWh/day = 241 kWh/month.
+        # Targets ~1450 mil/year (between Trafikanalys vanlig bilägare
+        # 1500 mil/year and Vattenfall E-mobility national EV average
+        # 1200 mil/year), 2 kWh/mil consensus. The previous N-fix-4
+        # default (4h × 3.7 kW = 14.8 kWh/day) overstated by 85 %.
+        # Default-start at 22:00 puts the block in the cheap night
+        # window — the SP experiment measures whether users keep it
+        # there or drag it into peak hours.
         if user_input.has_ev:
-            devices["ev_charger#1"] = self._device_block(64, 80, 3.7)
+            devices["ev_charger#1"] = self._device_block(88, 88 + 14, 2.3)
 
         return devices
 
@@ -427,10 +433,18 @@ class MockEngine(CalculationEngine):
 
     @staticmethod
     def _device_block(start_slot: int, end_slot: int, kw: float) -> list:
-        """Create a 96-slot array with `kw` between start_slot (inclusive) and end_slot (exclusive)."""
+        """Create a 96-slot array with `kw` between start_slot (inclusive) and end_slot (exclusive).
+
+        Phase O-fix-1: wrap-aware. When end_slot > SLOTS_PER_DAY (e.g. a
+        device that starts at 22:00 and runs 3.5h ends at 01:30 = slot
+        102), the loop wraps around the day boundary so the trailing
+        slots populate at the start of the array. Mirrors the wrap
+        logic already in api/profile.py /recalculate (Phase 3.X-fix-18)
+        and the timeline.js / step5.js block renderer.
+        """
         arr = [0.0] * SLOTS_PER_DAY
         for i in range(start_slot, end_slot):
-            arr[i] = kw
+            arr[i % SLOTS_PER_DAY] = kw
         return arr
 
     def _get_pv_generation(self, user_input: UserInput) -> list:

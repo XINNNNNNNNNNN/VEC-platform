@@ -111,14 +111,21 @@ const DEVICE_CATALOG = {
     label: "EV charger",
     color: "#A855F7",  // purple
     draggable: true,
-    default_start: 64,        // 16:00
-    // Phase N-fix-4: halved 32 → 16 (8h → 4h). Mirrors engine/mock.py
-    // ev_charger#1 _device_block(64, 80, 3.7). Typical Swedish commuter
-    // EV needs ~9 kWh/day; 4h × 3.7 kW = 14.8 kWh covers that with
-    // headroom while letting overnight slot pricing reward shifting
-    // to the cheap night window if the user drags it.
-    default_duration: 16,     // 4 h
-    load_kw: 3.7,
+    // Phase O-fix-1: calibrated to Swedish villa+EV household reality.
+    // Schuko 10A nödladdning at 2.3 kW (Elsäkerhetsverket standard,
+    // most prevalent setup before dedicated wallbox installation) for
+    // 3.5 h = 8.05 kWh/day = 241 kWh/month. Targets ~1450 mil/year of
+    // driving at 2 kWh/mil, between Trafikanalys vanlig bilägare and
+    // Vattenfall E-mobility national EV average. The previous N-fix-4
+    // default (4 h × 3.7 kW = 14.8 kWh/day) overstated by 85 %.
+    // Default-start 22:00 puts the block in the cheap night window —
+    // the SP experiment measures whether users keep it there or drag
+    // it into peak hours. 14 slots starting at slot 88 wraps midnight
+    // to slot 5 (01:30); the renderer + drag handler already support
+    // wrap from Phase 3.X-fix-18.
+    default_start: 88,        // 22:00
+    default_duration: 14,     // 3.5 h (slots 88-101 wrapping to 0-5)
+    load_kw: 2.3,
     default_include_when_has_ev: true,
   },
 };
