@@ -126,7 +126,22 @@ class UserInput(Base):
     # ----- v3.0 fields -----
     # Replace v2 `building_type` (5-choice) and `heating` with these two.
     # MockEngine derives an internal building_type code from ownership + DER.
-    ownership_type: Mapped[str] = mapped_column(String(16), nullable=False)  # 'tenant' | 'owner'
+    # Phase O: DEPRECATED — Step 1 no longer asks ownership and the
+    # engine no longer uses it for billing (effekttariff was removed
+    # after the Swedish 2026 mandate cancellation). Kept as nullable
+    # for one-cycle rollback safety; alembic migration fea15d1b9cf2
+    # relaxed the NOT NULL constraint.
+    ownership_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # Phase O: 4-way building classification mirroring the E.ON Sweden
+    # consumer survey 2025 (Lägenhet / Radhus / Villa-hus / Annat).
+    # Drives the engine archetype split:
+    #   apartment -> 'apartment' archetype (district heating, N-fix-2)
+    #   townhouse / house / other -> 'house' archetype (heat pump,
+    #     N-fix-4 calibrated)
+    # No ownership-driven branch any more — effekttariff was removed
+    # in Phase O after Sweden's 2026 mandate was cancelled 2026-03-13.
+    building_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # ^ 'apartment' | 'townhouse' | 'house' | 'other' | NULL
     # Step 1 Q5; drives sessions.expertise. Phase 3.X-fix-10 relaxed
     # this to nullable: Q5 is conditionally rendered (only when
     # vec_familiarity is in the top 2 of the 5-pt scale), so users

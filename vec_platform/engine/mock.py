@@ -11,9 +11,7 @@ from vec_platform.config import (
     FEED_IN_PRICE,
     GRID_FEE_VARIABLE_RATE,
     grid_fee_fixed,
-    EFFEKTTARIFF_DAY_SEK_PER_KW,
-    EFFEKTTARIFF_DAY_START_HOUR,
-    EFFEKTTARIFF_DAY_END_HOUR,
+    APARTMENT_BUILDINGS,
     SLOTS_PER_DAY,
 )
 # Phase N F9: RETAIL_PRICE_BASE and GRID_FEE_MONTHLY are deprecated
@@ -21,6 +19,10 @@ from vec_platform.config import (
 # tiered grid_fee_fixed + GRID_FEE_VARIABLE_RATE respectively). Both
 # are intentionally NOT imported above so a stale code path that
 # tries to use them fails at import time, not silently.
+#
+# Phase O: EFFEKTTARIFF_* constants and the per-kW peak fee are no
+# longer imported either — Sweden's 2026 mandate was cancelled and
+# the engine no longer adds the peak component to grid_fee.
 
 DAYS_PER_MONTH = 30
 
@@ -75,7 +77,7 @@ _VEC_INTERNAL_SELL_PRICE   = 1.05   # SEK/kWh, flat
 # local copy is what get_shadow_prices emits to the UI; if it drifts
 # from config the customize/respond pages would see different numbers
 # from what calculate_bill uses.
-_FEED_IN_PRICE             = 0.40   # SEK/kWh, flat (matches config.FEED_IN_PRICE)
+_FEED_IN_PRICE             = 0.55   # SEK/kWh, flat (matches config.FEED_IN_PRICE; Phase O post-skattereduktion)
 
 
 class MockEngine(CalculationEngine):
@@ -111,6 +113,7 @@ class MockEngine(CalculationEngine):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        building_type: str | None = None,
         ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate a monthly bill breakdown for one scenario.
@@ -162,28 +165,12 @@ class MockEngine(CalculationEngine):
             grid_fee_fixed(area_m2)
             + consumed_monthly * GRID_FEE_VARIABLE_RATE
         )
-        # Phase N-2: effekttariff for villa owners (Sweden 2026
-        # mandate, Ellevio SE3 schedule). Tenants pay the building's
-        # shared connection so the peak-kW component does not apply.
-        # Mock simplification: use the day-window hourly peak as a
-        # one-day proxy for the month's top-3-hour average. Shifting
-        # load into the night window (22-06) zeroes the fee — the
-        # exact signal the VEC SP experiment wants to surface.
-        if ownership_type == "owner":
-            hourly_avg_kw = []
-            slots_per_hour = SLOTS_PER_DAY // 24  # 4
-            for hour in range(24):
-                start = hour * slots_per_hour
-                slot_vals = (
-                    max(0.0, net_load[i])
-                    for i in range(start, start + slots_per_hour)
-                )
-                hourly_avg_kw.append(sum(slot_vals) / slots_per_hour)
-            day_peak_kw = max(
-                hourly_avg_kw[EFFEKTTARIFF_DAY_START_HOUR:EFFEKTTARIFF_DAY_END_HOUR],
-                default=0.0,
-            )
-            grid_fee += day_peak_kw * EFFEKTTARIFF_DAY_SEK_PER_KW
+        # Phase O: effekttariff REMOVED. The Swedish 2026 DSO mandate
+        # was cancelled 2026-03-13 and the major SE3 utilities have
+        # withdrawn or paused their roll-outs. ``ownership_type`` and
+        # ``building_type`` are accepted by the signature for caller
+        # compatibility but no longer influence grid_fee.
+        _ = (ownership_type, building_type)  # kept for stable signature
         tax = consumed_monthly * ENERGY_TAX
 
         # ---- PV self-consumption value (informational, F5) ----
@@ -362,20 +349,13 @@ class MockEngine(CalculationEngine):
         # EV charging is intentionally NOT scaled — one EV draws the
         # same charge regardless of household size.
         people = getattr(user_input, "people", None) or 2
-        ownership_type = getattr(user_input, "ownership_type", None)
         flex_scale = 0.6 + 0.2 * max(1, int(people))
-        # Phase N-fix-5: single-occupancy tenant apartments deviate
-        # from the default 2-person template more than the linear
-        # flex_scale captures. Two adjustments:
-        #   A) Dishwasher is absent — only ~20-30% of single-person
-        #      50 m² Swedish apartments have one.
-        #   B) Washing-machine duration is halved beyond flex_scale
-        #      (1-2 cycles/week vs the 2-person 3-4). Implemented by
-        #      a direct _device_block call so it bypasses flex_scale.
-        # Guards are AND-gated on tenant ownership so they cannot
-        # affect any owner-occupied case (villa N-fix-4 calibration
-        # stays intact).
-        single_tenant = (people == 1 and ownership_type == "tenant")
+        # Phase O: N-fix-5 single-tenant guard REMOVED. Step 1 no
+        # longer asks ownership_type, so the engine cannot identify
+        # the "single 50 m² renter" sub-segment that motivated the
+        # dishwasher-skip and washing-duration-halving. All flex
+        # devices revert to the standard catalog, with N-fix-3 (flex
+        # duration scaling by people) still active for everyone.
 
         def _scaled_block(start, end, kw):
             dur = end - start
@@ -390,19 +370,9 @@ class MockEngine(CalculationEngine):
             ),
             # Cooking — dinner only (Phase 3.7-pre collapsed AM+PM into one).
             "cooking#1": _scaled_block(72, 76, 2.0),       # 18:00-19:00 base, 2 kW
+            "dishwasher#1": _scaled_block(78, 84, 1.2),    # 19:30-21:00 base, 1.2 kW
+            "washing_machine#1": _scaled_block(76, 84, 2.0),  # 19:00-21:00 base, 2.0 kW
         }
-
-        # Phase N-fix-5 A: skip dishwasher for single tenant.
-        if not single_tenant:
-            devices["dishwasher#1"] = _scaled_block(78, 84, 1.2)  # 19:30-21:00 base, 1.2 kW
-
-        # Phase N-fix-5 B: single-tenant washing duration capped at 4
-        # slots (1h) — approximates 1-2 cycles/week vs the 2-person
-        # 3-4. Non-single cases keep the flex_scale-adjusted duration.
-        if single_tenant:
-            devices["washing_machine#1"] = self._device_block(76, 80, 2.0)  # 19:00-20:00, 1h
-        else:
-            devices["washing_machine#1"] = _scaled_block(76, 84, 2.0)  # 19:00-21:00 base, 2.0 kW
 
         # v3 dropped the heating question along with the water_heater device.
 
@@ -420,18 +390,35 @@ class MockEngine(CalculationEngine):
 
     @staticmethod
     def _derive_building_type(user_input: UserInput) -> str:
-        """Map v3 ownership + DER → v2-style building_type code.
+        """Map Phase O building_type → engine archetype code.
 
-        Internal helper only; v3 no longer stores building_type in the DB. The
-        engine still drives base-load amplitude with the same archetypes:
-          tenant            -> apartment
-          owner, no PV      -> villa_noder
-          owner, PV         -> villa_pv
-          owner, PV + BESS  -> villa_pvbess
+        Internal helper only; the engine still uses 4 archetype codes
+        for backward-compat with _get_base_load (apartment /
+        villa_noder / villa_pv / villa_pvbess). Phase O collapses to
+        two distinct base/peak tuples but keeps the sub-codes so
+        DER-presence still toggles the small villa_pv vs villa_pvbess
+        vs villa_noder split.
+
+        Phase O mapping:
+          building_type == 'apartment'    -> 'apartment'
+          building_type IN {townhouse,
+                            house,
+                            other,
+                            NULL}         -> villa_noder / villa_pv / villa_pvbess
+                                             (sub-selected by DER)
+
+        ``ownership_type`` is no longer consulted (deprecated column).
+        Legacy 'tenant' rows would have mapped to apartment; with the
+        column relaxed to nullable in Phase O, only building_type
+        matters going forward.
         """
-        if user_input.ownership_type == "tenant":
+        building_type = getattr(user_input, "building_type", None)
+        if building_type in APARTMENT_BUILDINGS:
             return "apartment"
-        # owner branch
+        # All other values (townhouse, house, other, NULL) share the
+        # house archetype. DER-driven sub-codes preserved so the
+        # existing N-fix-4 tuples (villa_pv 0.3/1.0, villa_noder
+        # 0.3/0.9) continue to apply.
         if user_input.has_pv and user_input.has_bess:
             return "villa_pvbess"
         if user_input.has_pv:

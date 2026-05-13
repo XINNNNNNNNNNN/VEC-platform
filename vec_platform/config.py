@@ -31,9 +31,11 @@ RETAIL_PRICE_BASE = 1.5  # DEPRECATED — see note above
 # stale reader fails loudly (TypeError) rather than silently using
 # the wrong number.
 GRID_FEE_MONTHLY = None  # DEPRECATED — use grid_fee_fixed() + GRID_FEE_VARIABLE_RATE
-# Phase N F8: 2026 SE3 residential energy tax (energiskatt),
-# VAT-inclusive effective rate. Previously 0.45 (slightly inflated).
-ENERGY_TAX = 0.428  # SEK/kWh
+# Phase O: Sweden 2026-01-01 sänkning of residential energy tax
+# (energiskatt). Government cut the rate by 9.875 öre from 54.875
+# to 45.0 öre/kWh (incl 25% VAT). Replaces the Phase N F8 estimate
+# of 0.428 which was based on pre-cut data.
+ENERGY_TAX = 0.45  # SEK/kWh incl VAT
 
 # Phase N F6: structured grid fee (nätavgift) = abonnemang (fixed,
 # correlated with main breaker ampere via floor area proxy) +
@@ -64,28 +66,22 @@ def grid_fee_fixed(area_m2):
 # VEC internal prices (SEK/kWh)
 VEC_INTERNAL_BUY = 0.85
 VEC_INTERNAL_SELL = 1.05
-# Phase N F7: SE3 utility purchase median for residential PV export.
-# Previously 0.95 (~2x reality, inflated PV-owner export value).
-FEED_IN_PRICE = 0.40
+# Phase O: post-skattereduktion feed-in price. The 60-öre tax credit
+# (skattereduktion) for residential PV export was repealed 2026-01-01,
+# so the household-facing feed-in rate is now spot price + small
+# utility margin only. Typical 2026 H1: spot ~0.50 + 5 öre påslag +
+# 5 öre nätnytta ≈ 0.55 SEK/kWh. Previously 0.40 (Phase N F7) was a
+# conservative mid-2025 figure that under-estimated post-cut value.
+FEED_IN_PRICE = 0.55  # SEK/kWh
 
-# ---- Phase N-2: effekttariff (Swedish 2026 DSO mandate) ----
-# All Swedish DSOs must implement effekttariff (peak-kW fee) by
-# Dec 31 2026. Ellevio rolled out to ~500k villa customers Jan 2026.
-# Values below mirror Ellevio's SE3 villa schedule. Tenants pay the
-# building's shared grid connection so this fee does not apply to
-# them — only owner-occupied dwellings are billed.
-#
-# Platform simplification: real billing uses the average of the
-# month's three highest 1-hour peaks; the mock uses the day's single
-# highest 1-hour peak inside the 06-22 day window, then multiplies
-# by the per-kW rate to produce one month's effekttariff. The night
-# window (22-06) is exempt — shifting load into the night zeroes
-# this component, which is precisely the behavioural signal the SP
-# experiment wants to surface.
-EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25
-EFFEKTTARIFF_NIGHT_SEK_PER_KW = 40.62
-EFFEKTTARIFF_DAY_START_HOUR = 6
-EFFEKTTARIFF_DAY_END_HOUR = 22
+# ---- Phase N-2 effekttariff REMOVED in Phase O ----
+# The Swedish 2026 DSO effekttariff mandate was cancelled on
+# 2026-03-13. Ellevio reverted 2026-06-01, Mälarenergi 2026-07-01,
+# Göteborg Energi stopped, and E.ON's winter-only model
+# (effective 2026-09-01) has not yet published an exact formula.
+# Most pilot users (running 2026 H2) will see no effekttariff line
+# on their real bills, so the mock no longer adds it. The paper's
+# method section documents this policy reversal.
 
 # CO2 emission factor (kg/kWh) - Nordic mix
 CO2_FACTOR = 0.045
@@ -94,7 +90,20 @@ CO2_FACTOR = 0.045
 SLOTS_PER_DAY = 96
 SLOT_MINUTES = 15
 
-# Building types
+# Phase O: building_type 4-way classification aligned with the
+# E.ON Sweden consumer survey 2025. Effekttariff was removed in
+# this phase, so there is no longer an ownership-driven split —
+# the engine only needs to know whether the dwelling is an
+# apartment (district heating, smaller appliance kit) or a house
+# (heat pump, larger appliance kit). townhouse / house / other all
+# share the house archetype calibration (Phase N-fix-4).
+BUILDING_TYPE_VALUES = ("apartment", "townhouse", "house", "other")
+APARTMENT_BUILDINGS = frozenset({"apartment"})
+HOUSE_BUILDINGS = frozenset({"townhouse", "house", "other"})
+
+# Legacy v2 list still referenced by historical migrations / analyst
+# tooling. Phase O does not write to these codes; kept for grep-able
+# rollback safety.
 BUILDING_TYPES = ["apartment", "villa_noder", "villa_pv", "villa_pvbess"]
 
 # Heating types

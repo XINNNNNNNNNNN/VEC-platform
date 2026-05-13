@@ -21,8 +21,8 @@ const DAYS_PER_MONTH = 30;
 // villas vs Swedish reality; replaced by gridFeeFixed(areaM2) +
 // PRICE_GRID_FEE_VARIABLE_RATE × monthlyKwh (Phase N F6).
 const PRICE_RETAIL = 1.5;  // DEPRECATED fallback
-const PRICE_TAX = 0.428;            // Phase N F8: 2026 SE3 residential
-const PRICE_FEED_IN = 0.40;         // Phase N F7: SE3 utility median
+const PRICE_TAX = 0.45;             // Phase O: 2026 sänkning (was 0.428 N F8)
+const PRICE_FEED_IN = 0.55;         // Phase O: post-skattereduktion (was 0.40 N F7)
 const PRICE_VEC_INTERNAL_SELL = 1.05;
 
 // Phase N F6: structured grid fee (nätavgift).
@@ -36,30 +36,11 @@ function gridFeeFixed(areaM2) {
   return 450;
 }
 
-// Phase N-2: effekttariff (Swedish 2026 villa peak-kW fee).
-// Mirror of vec_platform/config.py EFFEKTTARIFF_* constants.
-const EFFEKTTARIFF_DAY_SEK_PER_KW = 81.25;
-const EFFEKTTARIFF_DAY_START_HOUR = 6;
-const EFFEKTTARIFF_DAY_END_HOUR = 22;
-
-// Owner-only fee; returns 0 for tenants / unknown.
-// netLoad is the 96-slot kW array; the day-window hourly peak is the
-// same proxy the backend uses (single-day stand-in for monthly
-// top-3-hour average).
-function effekttariffMonthly(netLoad, ownershipType) {
-  if (ownershipType !== "owner" || !Array.isArray(netLoad)) return 0;
-  const slotsPerHour = 4;
-  let peakKw = 0;
-  for (let h = EFFEKTTARIFF_DAY_START_HOUR; h < EFFEKTTARIFF_DAY_END_HOUR; h++) {
-    let s = 0;
-    for (let k = 0; k < slotsPerHour; k++) {
-      s += Math.max(0, netLoad[h * slotsPerHour + k]);
-    }
-    const avg = s / slotsPerHour;
-    if (avg > peakKw) peakKw = avg;
-  }
-  return peakKw * EFFEKTTARIFF_DAY_SEK_PER_KW;
-}
+// Phase O: effekttariff REMOVED. The Swedish 2026 DSO mandate was
+// cancelled 2026-03-13 and the major SE3 utilities have withdrawn
+// or paused their roll-outs. The previous EFFEKTTARIFF_* constants
+// and effekttariffMonthly() helper are gone; computeBillScenario
+// no longer adds a peak-kW component to grid_fee.
 
 // Naming convention sticks with snake_case to match the existing
 // callers in timeline.js + step5.js (default_start / default_duration /

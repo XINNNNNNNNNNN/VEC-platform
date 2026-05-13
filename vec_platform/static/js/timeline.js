@@ -30,9 +30,11 @@
     // Phase N F6: floor area, drives the tiered grid fee (abonnemang)
     // in computeBillScenario so the live preview matches the backend.
     areaM2: null,
-    // Phase N-2: 'owner' triggers villa effekttariff in the live
-    // preview; 'tenant' / null skips it. Mirrors user_input.ownership_type.
-    ownershipType: null,
+    // Phase O: building_type ('apartment' / 'townhouse' / 'house' /
+    // 'other' / null) is accepted by computeBillScenario for caller
+    // compatibility but no longer changes the bill (effekttariff
+    // removed). Mirrors user_input.building_type.
+    buildingType: null,
   };
 
   // ---- DOM helpers ----
@@ -519,9 +521,9 @@
     // updates while dragging a device reflect the actual cost at
     // each time-of-day, not a flat average.
     // Phase N F6: also pass areaM2 so grid_fee tier matches backend.
-    // Phase N-2: pass ownershipType so villa effekttariff applies live.
+    // Phase O: pass buildingType (informational; effekttariff removed).
     const bill = VECCompute.computeBillScenario(
-      netLoad, "no_vec", state.spotPrices, state.areaM2, state.ownershipType
+      netLoad, "no_vec", state.spotPrices, state.areaM2, state.buildingType
     );
     renderBillCard(bill);
   }
@@ -596,8 +598,9 @@
     // same tiered grid fee as the backend. null is acceptable —
     // gridFeeFixed defaults to the lowest tier (100 SEK).
     state.areaM2 = profile.area_m2 ?? null;
-    // Phase N-2: ownership_type gates effekttariff in the JS preview.
-    state.ownershipType = profile.ownership_type ?? null;
+    // Phase O: building_type informs the live-preview computeBillScenario
+    // call (currently informational only; effekttariff removed).
+    state.buildingType = profile.building_type ?? null;
     // Phase 3.X-fix-18: gate the BESS placeholder track. Defaults to
     // false if the backend response predates the fix-18 schema bump.
     state.hasBess = !!profile.has_bess;
@@ -648,10 +651,10 @@
     // Phase K-2 F4: pass the loaded retail curve so the baseline bill
     // uses the same per-slot pricing as the live preview.
     // Phase N F6: pass areaM2 so grid_fee matches backend tiered fee.
-    // Phase N-2: pass ownershipType for effekttariff parity.
+    // Phase O: pass buildingType (informational; effekttariff removed).
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.ownershipType
+      state.areaM2, state.buildingType
     );
 
     renderTimeline();
@@ -800,8 +803,8 @@
     // Phase N F6: area_m2 cannot change via calibration, but refresh
     // it defensively in case the server response shape evolved.
     state.areaM2 = profile.area_m2 ?? state.areaM2;
-    // Phase N-2: same defensive refresh for ownership_type.
-    state.ownershipType = profile.ownership_type ?? state.ownershipType;
+    // Phase O: same defensive refresh for building_type.
+    state.buildingType = profile.building_type ?? state.buildingType;
     // Phase L: re-anchor the "vs. baseline" delta on the calibrated
     // state. Without this, dragging a device after raising PV from 5
     // to 15 would show a saving that includes the calibration delta
@@ -811,10 +814,10 @@
     // is the post-cascade step=2 row (Phase K-2 fix-1), so its
     // net_load already reflects current calibration.
     // Phase N F6: pass areaM2 for tiered grid_fee consistency.
-    // Phase N-2: pass ownershipType for effekttariff parity.
+    // Phase O: pass buildingType (informational; effekttariff removed).
     state.originalBill = VECCompute.computeBillScenario(
       profile.net_load, "no_vec", state.spotPrices,
-      state.areaM2, state.ownershipType
+      state.areaM2, state.buildingType
     );
     refreshChartAndBill();
   }

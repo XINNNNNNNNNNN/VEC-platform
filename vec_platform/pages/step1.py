@@ -32,6 +32,22 @@ from vec_platform.pages.step7 import _EXPERT_FAMILIARITY_GATE
 
 # ==================== Step 1 ====================
 
+# Phase O: 4-way building_type aligned with E.ON Sweden consumer
+# survey 2025 categories (Lägenhet / Radhus / Villa-hus / Annat).
+# Replaces the Phase E 2-way ownership_type radio. After Sweden's
+# 2026 effekttariff mandate was cancelled the engine no longer needs
+# an ownership-driven branch, and a 4-way building question is more
+# informative for downstream segmentation than the binary rent/own.
+_BUILDING_TYPE_OPTIONS = [
+    {"label": "Apartment (Lägenhet)", "value": "apartment"},
+    {"label": "Townhouse (Radhus)", "value": "townhouse"},
+    {"label": "House / villa (Villa/hus)", "value": "house"},
+    {"label": "Other (Fritidshus / annat)", "value": "other"},
+]
+
+# DEPRECATED Phase E options — kept only for the rollback path. New
+# code reads building_type instead. submit_step1 no longer writes
+# user_input.ownership_type.
 _OWNERSHIP_OPTIONS = [
     {"label": "Tenant (rent)", "value": "tenant"},
     {"label": "Owner", "value": "owner"},
@@ -171,11 +187,13 @@ def step1_layout(session_id: str | None = None):
 
         dbc.Card([
             dbc.CardBody([
-                # Q1: Ownership type
-                html.H5("Q1 · Are you a tenant or an owner?"),
+                # Q1: Building type (Phase O — 4-way replacing the
+                # legacy 2-way ownership_type radio). Mirrors the
+                # E.ON Sweden consumer survey 2025 categories.
+                html.H5("Q1 · What kind of home do you live in?"),
                 dbc.RadioItems(
-                    id="ownership-type",
-                    options=_OWNERSHIP_OPTIONS,
+                    id="building-type",
+                    options=_BUILDING_TYPE_OPTIONS,
                     value=None,
                     className="mb-4",
                 ),
@@ -233,16 +251,16 @@ def step1_layout(session_id: str | None = None):
 # safe against synthetic clicks.
 @dash_app.callback(
     Output("btn-next-step1", "disabled"),
-    Input("ownership-type", "value"),
+    Input("building-type", "value"),
     Input("area", "value"),
     Input("people", "value"),
     Input("occupation", "value"),
     Input("url", "search"),
 )
-def toggle_step1_next(ownership_type, area, people, occupation, search):
+def toggle_step1_next(building_type, area, people, occupation, search):
     """Enable Next only when every required field is filled.
 
-    Required: ownership_type, area, people. occupation is conditionally
+    Required: building_type, area, people. occupation is conditionally
     required (only when sessions.vec_familiarity is in the top 2 of the
     5-pt scale, i.e. the same gate that decides whether Q5 is even
     visible). der_options is *not* required — a household may legitimately
@@ -264,7 +282,7 @@ def toggle_step1_next(ownership_type, area, people, occupation, search):
             _db.close()
 
     missing_required = (
-        not ownership_type
+        not building_type
         or area is None
         or people is None
         or (occupation_required and not occupation)
@@ -286,7 +304,7 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
     Output("url", "search"),
     Output("step1-error", "children"),
     Input("btn-next-step1", "n_clicks"),
-    State("ownership-type", "value"),
+    State("building-type", "value"),
     State("der-options", "value"),
     State("area", "value"),
     State("people", "value"),
@@ -294,7 +312,7 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step1(n_clicks, ownership_type, der_options, area, people,
+def submit_step1(n_clicks, building_type, der_options, area, people,
                  occupation, search):
     if not n_clicks:
         return no_update, no_update, no_update
@@ -320,7 +338,7 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
             _db.close()
 
     missing_required = (
-        not ownership_type
+        not building_type
         or area is None
         or people is None
         or (occupation_required and not occupation)
@@ -426,7 +444,12 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
             user_input = existing_ui
 
         # Step 1's own fields always reflect the latest submit.
-        user_input.ownership_type = ownership_type
+        # Phase O: write building_type (the new authoritative column).
+        # ownership_type is no longer written — the column was relaxed
+        # to nullable in alembic fea15d1b9cf2 and stays NULL for new
+        # rows. Older rows (pre-Phase-O) keep their existing values
+        # via the upsert path (the line below is not in this branch).
+        user_input.building_type = building_type
         user_input.occupation = occupation
         user_input.area_m2 = float(area)
         user_input.people = int(people)
@@ -539,24 +562,24 @@ def submit_step1(n_clicks, ownership_type, der_options, area, people,
         for scenario in _SCENARIOS:
             # Phase N F6: pass area_m2 so grid_fee uses the tiered
             # nätavgift structure instead of the deprecated flat 580.
-            # Phase N-2: ownership_type triggers villa effekttariff.
+            # Phase O: pass building_type for the 2-archetype split.
+            # ownership_type intentionally NOT passed — effekttariff
+            # removed; mock.calculate_bill still accepts the kwarg
+            # for compat but ignores it.
             db.add(calculation_engine.calculate_bill(
                 profile, scenario,
                 area_m2=user_input.area_m2,
-                ownership_type=user_input.ownership_type,
+                building_type=user_input.building_type,
             ))
 
         db.commit()
     finally:
         db.close()
 
-    # v3.2b: route through the tenant disclaimer (renters only) or
-    # straight to the info-calibration page (owners). Both pages
-    # eventually hand off to /step3 (the static customize page, which
-    # is "Step 2" in the Phase 4-A 7-step flow — URL preserved per
-    # decision 1B).
-    if ownership_type == "tenant":
-        next_path = "/dash/tenant_disclaimer"
-    else:
-        next_path = "/dash/info_calibration"
+    # Phase O: all participants go directly to /dash/info_calibration.
+    # The tenant disclaimer branch (formerly routed renters through a
+    # warning page) is dropped because Step 1 no longer asks ownership.
+    # The /dash/tenant_disclaimer page is still mounted by main.py for
+    # any rollback flow that wants to re-enable it.
+    next_path = "/dash/info_calibration"
     return next_path, f"?session_id={session_id}", ""

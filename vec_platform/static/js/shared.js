@@ -127,11 +127,12 @@ const VECCompute = (() => {
   // portion of the grid fee). Default null falls back to the lowest
   // tier (100 SEK) — callers should pass profile.area_m2 from
   // /api/profile so the live preview matches the backend.
-  // Phase N-2: ``ownershipType`` ('owner' | 'tenant' | null) gates
-  // the Sweden-2026 villa effekttariff (peak-kW fee). Pass
-  // profile.ownership_type from /api/profile.
+  // Phase O: ``buildingType`` accepted for caller compatibility but
+  // not used in the formula (the engine archetype only affects the
+  // generated load curve, not the bill formula). effekttariff was
+  // removed in Phase O after the Swedish 2026 mandate was cancelled.
   function computeBillScenario(
-    netLoad, scenario, retailArr = null, areaM2 = null, ownershipType = null,
+    netLoad, scenario, retailArr = null, areaM2 = null, buildingType = null,
   ) {
     let consumedDaily = 0, exportedDaily = 0;
     let purchaseDaily = 0;
@@ -154,12 +155,11 @@ const VECCompute = (() => {
     const energyPurchase = purchaseDaily * DAYS_PER_MONTH;
     // Phase N F6: nätavgift = abonnemang (tier by area) + rörlig
     // elöverföring (× monthly kWh transmitted).
-    // Phase N-2: villa owners also pay effekttariff (peak-kW fee).
-    // Effekttariff is added to gridFee so the line item displayed on
-    // the bill card stays single-row "Grid fee" (no UI shape change).
+    // Phase O: effekttariff REMOVED (Swedish 2026 mandate cancelled).
+    // buildingType is accepted but not added to the fee.
+    void buildingType;  // kept in signature for caller compat
     const gridFee = gridFeeFixed(areaM2)
-      + consumedMonthly * PRICE_GRID_FEE_VARIABLE_RATE
-      + effekttariffMonthly(netLoad, ownershipType);
+      + consumedMonthly * PRICE_GRID_FEE_VARIABLE_RATE;
     const tax = consumedMonthly * PRICE_TAX;
 
     let vecDiscount, feedIn;

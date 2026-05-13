@@ -214,11 +214,13 @@ def get_profile(
         # the same tiered grid fee as the backend, keeping /step3
         # live preview consistent with /step5 Compare and the DB.
         "area_m2": (user_input.area_m2 if user_input is not None else None),
-        # Phase N-2: surface ownership_type so JS can apply (or skip)
-        # the villa effekttariff in the live preview alongside the
-        # backend's calculate_bill.
-        "ownership_type": (
-            user_input.ownership_type if user_input is not None else None
+        # Phase O: surface building_type so the JS live preview can
+        # select the same engine archetype as the backend. The Phase
+        # N-2 ownership_type field is no longer returned — JS no
+        # longer needs it because effekttariff was removed.
+        "building_type": (
+            getattr(user_input, "building_type", None)
+            if user_input is not None else None
         ),
     }
 
@@ -361,12 +363,18 @@ def recalculate(
 
     bills = {}
     # Phase N F6: area_m2 from user_input drives tiered grid_fee.
-    # Phase N-2: ownership_type triggers villa effekttariff.
+    # Phase O: building_type drives the 2-archetype split.
+    # ownership_type is no longer consulted (effekttariff removed).
     area_m2 = user_input.area_m2 if user_input is not None else None
-    ownership_type = user_input.ownership_type if user_input is not None else None
+    building_type = (
+        getattr(user_input, "building_type", None)
+        if user_input is not None else None
+    )
     for scenario in ("no_vec", "vec_no_adjust", "vec_adjusted"):
         bill = calculation_engine.calculate_bill(
-            profile, scenario, area_m2=area_m2, ownership_type=ownership_type,
+            profile, scenario,
+            area_m2=area_m2,
+            building_type=building_type,
         )
         db.add(bill)
         bills[scenario] = {

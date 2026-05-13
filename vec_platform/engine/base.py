@@ -27,6 +27,7 @@ class CalculationEngine(ABC):
         profile: DailyProfile,
         scenario: str,
         area_m2: float | None = None,
+        building_type: str | None = None,
         ownership_type: str | None = None,
     ) -> BillBreakdown:
         """Calculate bill breakdown for a given scenario.
@@ -38,10 +39,17 @@ class CalculationEngine(ABC):
                 falls back to the lowest tier — callers should pass
                 ``user_input.area_m2`` whenever they have the
                 user_input row.
-            ownership_type: ``'owner'`` triggers Swedish 2026 villa
-                effekttariff (peak-kW grid fee); ``'tenant'`` or
-                ``None`` skips it. Apartments pay only the tiered
-                abonnemang + rörlig elöverföring.
+            building_type: Phase O — one of
+                'apartment' / 'townhouse' / 'house' / 'other' / None.
+                Currently informational; the engine's grid_fee no
+                longer changes with building_type because the
+                Swedish 2026 effekttariff was cancelled. Retained
+                in the signature so when policy stabilises and we
+                re-introduce a peak fee the caller path is ready.
+            ownership_type: DEPRECATED — kept as keyword argument
+                so existing callers that still pass it don't error.
+                The engine ignores it (effekttariff removed in
+                Phase O).
 
         Returns:
             BillBreakdown model with cost breakdown

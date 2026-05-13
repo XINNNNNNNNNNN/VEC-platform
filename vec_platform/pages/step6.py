@@ -80,10 +80,10 @@ def _policy_tab(impacts: dict) -> html.Div:
         html.P([
             "From 2026 the Swedish ",
             html.I("skattereduktion"),
-            " tax credit for small-scale producers is being phased out and a "
-            "capacity-based grid tariff (",
-            html.I("effekttariff"), ") is rolling out. Both make individual ",
-            "prosumer economics worse — but a community changes the math.",
+            " tax credit for small-scale producers has been phased out. "
+            "Without it, exported solar fetches only the spot-driven "
+            "feed-in price — which makes individual prosumer economics "
+            "worse, but a community changes the math.",
         ]),
         dbc.Row([
             dbc.Col(dbc.Card([
@@ -102,13 +102,14 @@ def _policy_tab(impacts: dict) -> html.Div:
                 ]),
             ]), md=6),
             dbc.Col(dbc.Card([
-                dbc.CardHeader(html.Strong("Effekttariff (capacity charges)")),
+                dbc.CardHeader(html.Strong("Peak demand on the local grid")),
                 dbc.CardBody([
                     html.P(
-                        "Grid operators increasingly bill on peak kW, not just "
-                        "total kWh. Without coordination, an EV plugged in at "
-                        "6 pm hits the daily peak; with VEC load-shifting, "
-                        "peaks are shaved."
+                        "Even without a national capacity tariff, the local "
+                        "transformer cares about peak kW. Without coordination, "
+                        "an EV plugged in at 6 pm hits the daily peak; with "
+                        "VEC load-shifting, peaks are shaved — leaving more "
+                        "headroom before the grid operator needs to upgrade."
                     ),
                     html.Div([
                         html.Span(

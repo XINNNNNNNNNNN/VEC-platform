@@ -56,7 +56,8 @@ def create_bill(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     # Phase N F6: lookup user_input.area_m2 for the tiered grid fee.
-    # Phase N-2: ownership_type for villa effekttariff.
+    # Phase O: building_type drives the 2-archetype split.
+    # ownership_type no longer read (effekttariff removed).
     user_input = (
         db.query(UserInput)
         .filter(UserInput.session_id == data.session_id)
@@ -64,11 +65,16 @@ def create_bill(
         .first()
     )
     area_m2 = user_input.area_m2 if user_input is not None else None
-    ownership_type = user_input.ownership_type if user_input is not None else None
+    building_type = (
+        getattr(user_input, "building_type", None)
+        if user_input is not None else None
+    )
 
     # Calculate bill
     bill = calculation_engine.calculate_bill(
-        profile, data.scenario, area_m2=area_m2, ownership_type=ownership_type,
+        profile, data.scenario,
+        area_m2=area_m2,
+        building_type=building_type,
     )
     db.add(bill)
     db.commit()
