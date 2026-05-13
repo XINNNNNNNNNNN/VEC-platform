@@ -110,12 +110,22 @@ EV_DEFAULT_START_SLOT = 88   # 22:00 — overnight charging window
 # in this phase; it is retained as an informational user input.
 # Future Phase K-3 may add user-controlled cycle depth scaling
 # with bess_kwh.
-BESS_DEFAULT_CAPACITY_KWH = 10.0
+# Phase O-fix-5: BESS daily cycle size is user-configurable, parallel
+# to EV. Power stays fixed at 2.5 kW (Schuko-equivalent) so the
+# duration scales with bess_kwh:
+#   bess_kwh =  2 -> 0.8 h (~3 slots) — small lithium booster
+#   bess_kwh =  5 -> 2.0 h (~8 slots)
+#   bess_kwh = 10 -> 4.0 h (~16 slots) — DEFAULT (Powerwall-class)
+#   bess_kwh = 20 -> 8.0 h (~32 slots) — upper bound
+# Cap at 20 kWh so charge + discharge windows never exceed ~16 h /
+# day and there is always room to wrap-shift without colliding.
+# Daily cycle FIXED 1/day (the "cycle 死的" design constraint);
+# what is now dynamic is the cycle SIZE.
+BESS_DEFAULT_KWH = 10.0
+BESS_MIN_KWH = 2.0
+BESS_MAX_KWH = 20.0
 BESS_POWER_KW = 2.5
-BESS_DURATION_SLOTS = 16
 BESS_EFFICIENCY = 0.9
-BESS_CHARGE_KWH_PER_DAY = 10.0
-BESS_DISCHARGE_KWH_PER_DAY = 9.0
 
 # Default schedule slots (user can drag in Step 3 timeline).
 # Charge default: PV-surplus midday window (slot 44 = 11:00).

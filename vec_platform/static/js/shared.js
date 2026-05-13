@@ -130,31 +130,51 @@ const VECCompute = (() => {
   //     charge_per_slot) goes to BESS; grid backfills.
   //   discharge slot: BESS supplies own_load up to whatever load
   //     remains after PV; surplus BESS energy exports to grid.
-  // Daily cycle is fixed 10 kWh charge -> 9 kWh discharge regardless
-  // of the user's bess_kwh capacity setting (Phase O-fix-2 scope).
   //
-  // chargeArr / dischargeArr are 96-slot arrays from state.placed
-  // (BESS_POWER_KW in the window, 0 elsewhere). Either may be null
-  // when has_bess is false or the slot is unscheduled.
-  const BESS_DURATION_SLOTS = 16;
-  const BESS_CHARGE_KWH_PER_DAY = 10.0;
-  const BESS_DISCHARGE_KWH_PER_DAY = 9.0;
+  // Phase O-fix-5: cycle SIZE is now user-configurable via bess_kwh
+  // (cycle COUNT still fixed at 1/day). Slot count is read from the
+  // array (each charge / discharge window has BESS_POWER_KW in N
+  // contiguous slots, 0 elsewhere), so 5 kWh -> 8 slots, 10 kWh ->
+  // 16 slots, 20 kWh -> 32 slots. Per-slot energy stays fixed because
+  // power and slot length are both constants:
+  //   chargePerSlot   = 2.5 kW × 0.25 h = 0.625 kWh
+  //   dischargePerSlot = 2.5 kW × 0.9 × 0.25 h = 0.5625 kWh
+  //
+  // chargeArr / dischargeArr are 96-slot arrays from state.placed.
+  // Either may be null when has_bess is false or the slot is
+  // unscheduled.
+  const BESS_POWER_KW = 2.5;
+  const BESS_EFFICIENCY = 0.9;
 
-  function _firstNonzeroSlot(arr) {
-    if (!Array.isArray(arr)) return null;
-    for (let i = 0; i < arr.length; i++) {
-      if (arr[i] > 0) return i;
+  function _bessWindow(arr) {
+    // Phase O-fix-5: return [start, duration] of the contiguous
+    // (wrap-aware) non-zero block, or null.
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const n = arr.length;
+    let start = -1;
+    for (let i = 0; i < n; i++) { if (arr[i] > 0) { start = i; break; } }
+    if (start === -1) return null;
+    // Detect wrap: slot 0 non-zero AND slot n-1 non-zero.
+    if (start === 0 && arr[n - 1] > 0) {
+      let trueStart = n - 1;
+      while (trueStart > 0 && arr[trueStart - 1] > 0) trueStart -= 1;
+      start = trueStart;
     }
-    return null;
+    let duration = 0;
+    for (let k = 0; k < n; k++) {
+      if (arr[(start + k) % n] > 0) duration += 1;
+      else break;
+    }
+    return [start, duration];
   }
 
   function applyBessDispatch(netLoad, pvGen, chargeArr, dischargeArr) {
-    const chargeStart = _firstNonzeroSlot(chargeArr);
-    const dischargeStart = _firstNonzeroSlot(dischargeArr);
-    if (chargeStart === null && dischargeStart === null) return netLoad;
+    const chargeWin = _bessWindow(chargeArr);
+    const dischargeWin = _bessWindow(dischargeArr);
+    if (chargeWin === null && dischargeWin === null) return netLoad;
 
-    const chargePerSlot = BESS_CHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS;
-    const dischargePerSlot = BESS_DISCHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS;
+    const chargePerSlot = BESS_POWER_KW * SLOT_HOURS;
+    const dischargePerSlot = BESS_POWER_KW * BESS_EFFICIENCY * SLOT_HOURS;
     const adjusted = netLoad.slice();
 
     // Reconstruct own_load (pre-PV demand) per slot.
@@ -163,8 +183,9 @@ const VECCompute = (() => {
       ownLoad[i] = netLoad[i] + pvGen[i];
     }
 
-    if (chargeStart !== null) {
-      for (let k = 0; k < BESS_DURATION_SLOTS; k++) {
+    if (chargeWin !== null) {
+      const [chargeStart, chargeDur] = chargeWin;
+      for (let k = 0; k < chargeDur; k++) {
         const i = (chargeStart + k) % SLOTS_PER_DAY;
         const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
         const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
@@ -175,8 +196,9 @@ const VECCompute = (() => {
         adjusted[i] += (pvToBess + gridToBess) / SLOT_HOURS;
       }
     }
-    if (dischargeStart !== null) {
-      for (let k = 0; k < BESS_DURATION_SLOTS; k++) {
+    if (dischargeWin !== null) {
+      const [dischargeStart, dischargeDur] = dischargeWin;
+      for (let k = 0; k < dischargeDur; k++) {
         const i = (dischargeStart + k) % SLOTS_PER_DAY;
         const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
         const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
@@ -342,7 +364,6 @@ const VECCompute = (() => {
     bessSchedule,
     applyBessDispatch,        // Phase O-fix-2
     BESS_DEVICE_KEYS,         // Phase O-fix-2: name set
-    BESS_DURATION_SLOTS,      // Phase O-fix-2
   };
 })();
 

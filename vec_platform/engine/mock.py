@@ -13,9 +13,10 @@ from vec_platform.config import (
     grid_fee_fixed,
     APARTMENT_BUILDINGS,
     BESS_POWER_KW,
-    BESS_DURATION_SLOTS,
-    BESS_CHARGE_KWH_PER_DAY,
-    BESS_DISCHARGE_KWH_PER_DAY,
+    BESS_EFFICIENCY,
+    BESS_DEFAULT_KWH,
+    BESS_MIN_KWH,
+    BESS_MAX_KWH,
     BESS_CHARGE_DEFAULT_START,
     BESS_DISCHARGE_DEFAULT_START,
     EV_DEFAULT_DAILY_KWH,
@@ -281,25 +282,74 @@ class MockEngine(CalculationEngine):
         return value
 
     @staticmethod
-    def _bess_window_from_array(arr) -> int | None:
-        """Return the start slot of a BESS schedule array, or None.
+    def _resolve_bess_kwh(user_input) -> float:
+        """Phase O-fix-5: pick the daily BESS cycle size in kWh.
 
-        BESS devices live in ``profile.devices`` as 96-slot arrays with
-        BESS_POWER_KW in BESS_DURATION_SLOTS slots and 0 elsewhere.
-        Returns the index of the first non-zero slot so the dispatch
-        loop can re-derive the window without depending on a separate
-        column. Returns None if the array is empty / all-zero (no BESS
-        scheduled).
+        Mirrors _resolve_ev_daily_kwh. Uses user_input.bess_kwh when
+        the participant has actively confirmed a value (bess_calibrated
+        True) and the value is within range; otherwise falls back to
+        BESS_DEFAULT_KWH (10 kWh, Powerwall-class). Out-of-range or
+        uncalibrated values use the default.
+        """
+        raw = getattr(user_input, "bess_kwh", None)
+        calibrated = bool(getattr(user_input, "bess_calibrated", False))
+        if raw is None or not calibrated:
+            return BESS_DEFAULT_KWH
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return BESS_DEFAULT_KWH
+        if value < BESS_MIN_KWH or value > BESS_MAX_KWH:
+            return BESS_DEFAULT_KWH
+        return value
+
+    @staticmethod
+    def _bess_window_from_array(arr):
+        """Return (start, duration) of a BESS schedule array, or None.
+
+        Phase O-fix-5: previously returned just the start slot because
+        BESS_DURATION_SLOTS was a fixed 16-slot window. Now the
+        duration scales with bess_kwh so the dispatch loop derives
+        both edges from the array.
         """
         if not isinstance(arr, list) or not arr:
             return None
-        for i, v in enumerate(arr):
-            if v > 0:
-                return i
-        return None
+        n = len(arr)
+        start = None
+        for i in range(n):
+            if arr[i] > 0:
+                start = i
+                break
+        if start is None:
+            return None
+        # Walk forward (wrap-aware) and count contiguous non-zero slots.
+        # Handles charge starting near midnight that wraps across the
+        # array boundary (e.g. start=88, duration=16 → slots 88-95 +
+        # 0-7 are positive, no positive between 8 and 87).
+        duration = 0
+        # Detect wrap: a "natural" non-wrap block has zeros immediately
+        # before `start` (or start == 0 with no zero before). If the
+        # block wraps, slot 0 is non-zero and slot n-1 is also non-zero.
+        wraps = (start == 0) and (arr[n - 1] > 0)
+        if wraps:
+            # Find the true start by walking back through wrapped tail.
+            true_start = n - 1
+            while true_start > 0 and arr[true_start - 1] > 0:
+                true_start -= 1
+            start = true_start
+        # Now count duration from this `start` forward, wrapping.
+        for k in range(n):
+            if arr[(start + k) % n] > 0:
+                duration += 1
+            else:
+                break
+        return (start, duration)
 
     def _apply_bess_dispatch(self, profile, net_load, pv_gen):
-        """Phase O-fix-2: adjust net_load per BESS schedule.
+        """Phase O-fix-2: adjust net_load per BESS schedule. Phase O-fix-5:
+        charge/discharge slot count derived from the array (no longer
+        hard-coded at BESS_DURATION_SLOTS), so the daily cycle scales
+        with user-configured bess_kwh.
 
         Reads bess_charge#1 and bess_discharge#1 from profile.devices
         (each a 96-slot array, BESS_POWER_KW in the window, 0 outside),
@@ -321,9 +371,16 @@ class MockEngine(CalculationEngine):
           - BESS -> grid   (discharge): net_load[i] -= bess_to_grid
                           (additional export)
 
-        Daily energy: 10 kWh charge -> 9 kWh discharge (round-trip 0.9).
-        bess_kwh capacity is NOT consulted in this phase; the cycle is
-        fixed regardless of user-configured battery size.
+        Daily energy now scales with bess_kwh:
+          charge_total = bess_kwh
+          discharge_total = bess_kwh × BESS_EFFICIENCY (0.9)
+        Per-slot energy is structurally fixed because power and slot
+        length are both constants:
+          charge_per_slot   = BESS_POWER_KW × 0.25 h = 0.625 kWh
+          discharge_per_slot = BESS_POWER_KW × BESS_EFFICIENCY × 0.25 h
+                             = 0.5625 kWh
+        The number of slots changes (16 for 10 kWh, 8 for 5 kWh, etc.)
+        so total = slots × per-slot ≈ bess_kwh.
         """
         devices_raw = getattr(profile, "devices", None)
         if not devices_raw:
@@ -339,14 +396,16 @@ class MockEngine(CalculationEngine):
 
         charge_arr = devices.get("bess_charge#1")
         discharge_arr = devices.get("bess_discharge#1")
-        charge_start = self._bess_window_from_array(charge_arr)
-        discharge_start = self._bess_window_from_array(discharge_arr)
-        if charge_start is None and discharge_start is None:
+        charge_win = self._bess_window_from_array(charge_arr)
+        discharge_win = self._bess_window_from_array(discharge_arr)
+        if charge_win is None and discharge_win is None:
             return net_load
 
         SLOT_HOURS = 0.25
-        charge_per_slot_kwh = BESS_CHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS
-        discharge_per_slot_kwh = BESS_DISCHARGE_KWH_PER_DAY / BESS_DURATION_SLOTS
+        # Per-slot kWh is structurally fixed (power × slot length);
+        # what varies session-to-session is the slot count.
+        charge_per_slot_kwh = BESS_POWER_KW * SLOT_HOURS
+        discharge_per_slot_kwh = BESS_POWER_KW * BESS_EFFICIENCY * SLOT_HOURS
 
         # Reconstruct own_load (pre-PV demand) per slot to drive the
         # priority decisions. net_load = own_load - pv, so:
@@ -355,8 +414,9 @@ class MockEngine(CalculationEngine):
         adjusted = list(net_load)
 
         # ---- Charge window ----
-        if charge_start is not None:
-            for k in range(BESS_DURATION_SLOTS):
+        if charge_win is not None:
+            charge_start, charge_dur = charge_win
+            for k in range(charge_dur):
                 i = (charge_start + k) % SLOTS_PER_DAY
                 # Energy this slot in kWh.
                 pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
@@ -374,8 +434,9 @@ class MockEngine(CalculationEngine):
                 adjusted[i] += (pv_to_bess + grid_to_bess) / SLOT_HOURS
 
         # ---- Discharge window ----
-        if discharge_start is not None:
-            for k in range(BESS_DURATION_SLOTS):
+        if discharge_win is not None:
+            discharge_start, discharge_dur = discharge_win
+            for k in range(discharge_dur):
                 i = (discharge_start + k) % SLOTS_PER_DAY
                 pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
                 load_kwh = max(0.0, own_load[i]) * SLOT_HOURS
@@ -574,15 +635,24 @@ class MockEngine(CalculationEngine):
         # generate_profile — energy storage redirects flow rather than
         # consuming it, so the priority dispatch in calculate_bill
         # handles the bill effect explicitly.
+        # Phase O-fix-5: duration scales with user_input.bess_kwh. At
+        # fixed 2.5 kW, duration_slots = round(bess_kwh / 2.5 * 4).
+        # Daily cycle: charge = bess_kwh kWh; discharge = bess_kwh × 0.9
+        # (round-trip loss, applied inside _apply_bess_dispatch).
         if user_input.has_bess:
+            bess_kwh = self._resolve_bess_kwh(user_input)
+            duration_slots = max(
+                1,
+                round((bess_kwh / BESS_POWER_KW) * (SLOTS_PER_DAY / 24)),
+            )
             devices["bess_charge#1"] = self._device_block(
                 BESS_CHARGE_DEFAULT_START,
-                BESS_CHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                BESS_CHARGE_DEFAULT_START + duration_slots,
                 BESS_POWER_KW,
             )
             devices["bess_discharge#1"] = self._device_block(
                 BESS_DISCHARGE_DEFAULT_START,
-                BESS_DISCHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                BESS_DISCHARGE_DEFAULT_START + duration_slots,
                 BESS_POWER_KW,
             )
 

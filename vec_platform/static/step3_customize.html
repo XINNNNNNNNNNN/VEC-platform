@@ -119,15 +119,24 @@
                 </label>
               </div>
 
+              <!-- Phase O-fix-5: bess_kwh now drives daily cycle size,
+                   not just a label. Range 2-20 kWh keeps the
+                   charge + discharge windows below ~16h so the user
+                   can always drag them without wrap collision.
+                   Default 10 (Powerwall-class). Step 0.5 for finer
+                   adjustment within the smaller range. -->
               <div class="capacity-row" id="bess-capacity-row" style="display: none;">
                 <label class="capacity-label" for="bess-capacity-input">Battery</label>
                 <input type="number" class="capacity-input" id="bess-capacity-input"
-                       value="10" step="1" min="0" disabled>
+                       value="10" step="0.5" min="2" max="20" disabled>
                 <span class="capacity-unit">kWh</span>
                 <label class="capacity-unknown">
                   <input type="checkbox" id="bess-capacity-unknown" checked>
                   I don't know
                 </label>
+                <small class="text-muted d-block ms-1" style="font-size: 0.75rem;">
+                  Typical 10 kWh (Powerwall-class). Range 2-20 kWh.
+                </small>
               </div>
 
               <!-- Phase O-fix-3: label changed from "EV battery" to
