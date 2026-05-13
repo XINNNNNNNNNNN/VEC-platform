@@ -98,8 +98,18 @@ class UserInput(Base):
     pv_kwp: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     has_bess: Mapped[bool] = mapped_column(Boolean, default=False)
     bess_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    # Phase C: EV battery capacity (kWh). NULL = "I don't know" / not
-    # yet calibrated; UI defaults to 60 kWh when displaying.
+    # Phase C (originally): EV battery capacity in kWh — UI defaulted
+    # to 60 kWh (Tesla Model 3 reference).
+    # Phase O-fix-3 SEMANTIC CHANGE: the column now stores DAILY
+    # charging energy in kWh, not vehicle battery capacity. Daily
+    # charging is driven by commute distance, not battery size — a
+    # 60 kWh Tesla Model 3 and a 90 kWh Tesla Model Y commuting the
+    # same 40 km both charge ~8 kWh/day. Range now 2-24 kWh/day
+    # (config.EV_MIN_DAILY_KWH .. EV_MAX_DAILY_KWH); NULL or out-of-
+    # range values fall back to EV_DEFAULT_DAILY_KWH (8.05).
+    # The field name is reused rather than renamed to avoid a schema
+    # migration on the empty pilot DB; pre-pilot dogfood rows were
+    # wiped 2026-05-13 so no stale battery-capacity values remain.
     ev_kwh: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # Phase C: persisted ±5% baseline scaling. Defaults to 1.0 (no
     # scaling). The fix-18 recalculate path still reads scale_factor

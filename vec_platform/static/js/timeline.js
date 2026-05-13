@@ -763,10 +763,13 @@
   // Phase C: capacity-input column metadata. The schema column for
   // each DER carries the historical "kWp" / "kWh" suffix; the JS DOM
   // ids are the cleaner "pv" / "bess" / "ev" prefixes.
+  // Phase O-fix-3: ev_kwh semantic changed from "EV battery capacity
+  // (kWh, e.g. 60 Tesla Model 3)" to "daily charging energy in kWh
+  // (e.g. 8 for ~40 km commute)". Default 8 (was 60).
   const _CAP_FIELDS = {
     pv:   { col: "pv_kwp",  default: 5  },
     bess: { col: "bess_kwh", default: 10 },
-    ev:   { col: "ev_kwh",  default: 60 },
+    ev:   { col: "ev_kwh",  default: 8  },
   };
 
   function setupCalibrationPanel(profile) {

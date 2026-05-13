@@ -18,6 +18,11 @@ from vec_platform.config import (
     BESS_DISCHARGE_KWH_PER_DAY,
     BESS_CHARGE_DEFAULT_START,
     BESS_DISCHARGE_DEFAULT_START,
+    EV_DEFAULT_DAILY_KWH,
+    EV_MIN_DAILY_KWH,
+    EV_MAX_DAILY_KWH,
+    EV_POWER_KW,
+    EV_DEFAULT_START_SLOT,
     SLOTS_PER_DAY,
 )
 
@@ -250,6 +255,30 @@ class MockEngine(CalculationEngine):
             feed_in_income=round(feed_in_income, 2),
             net_cost=round(net_cost, 2),
         )
+
+    @staticmethod
+    def _resolve_ev_daily_kwh(user_input) -> float:
+        """Phase O-fix-3: pick the daily EV charging energy in kWh.
+
+        Uses user_input.ev_kwh when the participant has actively
+        confirmed a value (ev_calibrated True) and the value is within
+        the supported range. Otherwise falls back to the Swedish
+        villa+EV reality default (EV_DEFAULT_DAILY_KWH = 8.05 kWh/day,
+        ~40 km commute). Out-of-range or stale values (e.g. an old
+        ev_kwh that meant battery capacity, like 60) are treated as
+        uncalibrated.
+        """
+        raw = getattr(user_input, "ev_kwh", None)
+        calibrated = bool(getattr(user_input, "ev_calibrated", False))
+        if raw is None or not calibrated:
+            return EV_DEFAULT_DAILY_KWH
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return EV_DEFAULT_DAILY_KWH
+        if value < EV_MIN_DAILY_KWH or value > EV_MAX_DAILY_KWH:
+            return EV_DEFAULT_DAILY_KWH
+        return value
 
     @staticmethod
     def _bess_window_from_array(arr) -> int | None:
@@ -518,21 +547,25 @@ class MockEngine(CalculationEngine):
 
         # v3 dropped the heating question along with the water_heater device.
 
-        # EV charging overnight (22:00-01:30, 3.5h, wraps midnight).
+        # EV charging overnight starting at 22:00, wraps midnight.
         # Phase N-fix-3: NOT flex-scaled (single vehicle, not per-person).
-        # Phase O-fix-1: calibrated to Swedish villa+EV household reality.
-        # Power 2.3 kW = Schuko 10A nödladdning (Elsäkerhetsverket standard,
-        # most prevalent before wallbox installation); duration 14 slots
-        # (3.5h) × 2.3 kW × 0.25h = 8.05 kWh/day = 241 kWh/month.
-        # Targets ~1450 mil/year (between Trafikanalys vanlig bilägare
-        # 1500 mil/year and Vattenfall E-mobility national EV average
-        # 1200 mil/year), 2 kWh/mil consensus. The previous N-fix-4
-        # default (4h × 3.7 kW = 14.8 kWh/day) overstated by 85 %.
-        # Default-start at 22:00 puts the block in the cheap night
-        # window — the SP experiment measures whether users keep it
-        # there or drag it into peak hours.
+        # Phase O-fix-1: calibrated to Swedish villa+EV reality (8 kWh/day
+        # default, Schuko 10A 2.3 kW). Phase O-fix-3: daily kWh now
+        # user-configurable via the ev_kwh field (Step 3 calibration
+        # panel) — duration scales with the configured energy at fixed
+        # 2.3 kW. The default of 8.05 kWh/day yields a 14-slot (3.5 h)
+        # block, matching the previous Phase O-fix-1 behaviour.
         if user_input.has_ev:
-            devices["ev_charger#1"] = self._device_block(88, 88 + 14, 2.3)
+            ev_daily_kwh = self._resolve_ev_daily_kwh(user_input)
+            duration_slots = max(
+                1,
+                round((ev_daily_kwh / EV_POWER_KW) * (SLOTS_PER_DAY / 24)),
+            )
+            devices["ev_charger#1"] = self._device_block(
+                EV_DEFAULT_START_SLOT,
+                EV_DEFAULT_START_SLOT + duration_slots,
+                EV_POWER_KW,
+            )
 
         # Phase O-fix-2: BESS charge + discharge windows. Stored as
         # 96-slot arrays of 2.5 kW (BESS_POWER_KW) so the timeline

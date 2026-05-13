@@ -74,6 +74,29 @@ VEC_INTERNAL_SELL = 1.05
 # conservative mid-2025 figure that under-estimated post-cut value.
 FEED_IN_PRICE = 0.55  # SEK/kWh
 
+# ---- Phase O-fix-3: EV daily charging (user-configurable) ----
+# Phase O-fix-1 fixed daily charge at 8.05 kWh (Swedish villa+EV avg)
+# to align mock with reality. Phase O-fix-3 lets the participant override
+# the default in the Step 3 calibration panel so different commute
+# profiles can be modelled. The field name on user_inputs.ev_kwh is
+# REPURPOSED — it used to mean vehicle battery capacity (e.g. 60 kWh
+# Tesla Model 3) but daily charging is driven by commute distance,
+# not battery size. New semantics: daily charging energy in kWh.
+#
+# Power stays at 2.3 kW (Schuko 10A) so the block duration scales:
+#   ev_kwh =  2 kWh -> ~0.9 h (~3 slots) — light city commute
+#   ev_kwh =  8 kWh -> ~3.5 h (~14 slots) — DEFAULT, ~40 km commute
+#   ev_kwh = 12 kWh -> ~5.2 h (~21 slots) — heavy commute
+#   ev_kwh = 24 kWh -> ~10.4 h (~42 slots) — upper bound
+# Anything beyond ~24 kWh starts overlapping daytime hours and
+# departs from the typical-day mock; the calibration panel caps
+# the input at EV_MAX_DAILY_KWH.
+EV_DEFAULT_DAILY_KWH = 8.05
+EV_MIN_DAILY_KWH = 2.0
+EV_MAX_DAILY_KWH = 24.0
+EV_POWER_KW = 2.3
+EV_DEFAULT_START_SLOT = 88   # 22:00 — overnight charging window
+
 # ---- Phase O-fix-2: BESS daily dispatch ----
 # Two user-draggable windows (charge + discharge), each 4 hours
 # (16 quarter-slots). Round-trip efficiency 0.9 (IEC 62933 industry

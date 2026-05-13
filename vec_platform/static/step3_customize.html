@@ -130,15 +130,27 @@
                 </label>
               </div>
 
+              <!-- Phase O-fix-3: label changed from "EV battery" to
+                   "EV daily charge". The ev_kwh field now stores
+                   daily charging energy (kWh/day), not vehicle
+                   battery capacity. Range 2-24 kWh/day (matches
+                   config.EV_MIN_DAILY_KWH .. EV_MAX_DAILY_KWH);
+                   default 8 = ~40 km commute (Swedish villa+EV
+                   typical). Step changed from 5 to 0.5 since the
+                   range is smaller and 0.5 kWh ≈ 2.5 km commute
+                   resolution. -->
               <div class="capacity-row" id="ev-capacity-row" style="display: none;">
-                <label class="capacity-label" for="ev-capacity-input">EV battery</label>
+                <label class="capacity-label" for="ev-capacity-input">EV daily charge</label>
                 <input type="number" class="capacity-input" id="ev-capacity-input"
-                       value="60" step="5" min="0" disabled>
-                <span class="capacity-unit">kWh</span>
+                       value="8" step="0.5" min="2" max="24" disabled>
+                <span class="capacity-unit">kWh/day</span>
                 <label class="capacity-unknown">
                   <input type="checkbox" id="ev-capacity-unknown" checked>
                   I don't know
                 </label>
+                <small class="text-muted d-block ms-1" style="font-size: 0.75rem;">
+                  Typical 8 kWh/day (~40 km commute). Range 2-24.
+                </small>
               </div>
             </div>
           </div>
