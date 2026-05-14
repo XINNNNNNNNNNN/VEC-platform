@@ -1,4 +1,4 @@
-/* Phase P-1: info_calibration concept-illustration + arm-info-block.
+/* Phase P-1 / P-2: info_calibration concept-illustration + arm-info-block.
  *
  * Dash auto-loads any *.css from this folder. Scoped to
  * .vec-panels-grid / .vec-panel / .arm-info-block so the styles can't
@@ -6,58 +6,70 @@
  * the layout reuses are defined in assets/step1.css (Phase O-fix-10);
  * Dash loads every CSS file in the assets folder at boot, so both
  * files are available to every Dash page.
+ *
+ * Phase P-2 layout change: 4-wide row → 2x2 grid for better visual
+ * balance and to give each panel more vertical room for the refined
+ * SVG details. Mobile collapses to a single column.
  */
 
 .vec-panels-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin: 20px 0;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, auto);
+    gap: 24px;
+    margin: 24px auto;
+    max-width: 800px;
 }
 
-/* On narrow viewports the 4-column grid collapses to a 2x2 grid so
- * the captions stay legible without horizontal scrolling. */
-@media (max-width: 768px) {
+/* Single-column stack on narrow viewports so each panel keeps its
+ * full caption width. */
+@media (max-width: 600px) {
     .vec-panels-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: 1fr;
     }
 }
 
 .vec-panel {
     background: #f8f9fa;
-    border-left: 3px solid #2c5282;
-    border-radius: 4px;
-    padding: 14px 12px;
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #2c5282;
+    border-radius: 6px;
+    padding: 20px;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .vec-panel-icon {
-    margin-bottom: 10px;
+    margin-bottom: 14px;
     width: 100%;
-    max-width: 180px;
+    min-height: 100px;
     display: flex;
+    align-items: center;
     justify-content: center;
 }
 
 .vec-panel-icon img {
     width: 100%;
     height: auto;
-    max-height: 90px;
+    max-height: 130px;
+    /* The drop-shadow in the SVG itself adds depth; nothing extra
+     * needed here. */
 }
 
 .vec-panel-caption {
-    font-size: 0.88em;
-    color: #444;
+    font-size: 0.92em;
+    color: #495057;
     margin: 0;
-    line-height: 1.4;
+    line-height: 1.5;
+    font-weight: 500;
 }
 
-/* The arm-specific saving block. Phase P-1: visually distinct from the
- * neutral panels above so participants register that the saving figure
- * is the page's experimental manipulation. */
+/* The arm-specific saving block. Phase P-1: visually distinct from
+ * the neutral panels above so participants register that the saving
+ * figure is the page's experimental manipulation. */
 .arm-info-block {
     background: #fff3cd;
     border-left: 4px solid #f59f00;

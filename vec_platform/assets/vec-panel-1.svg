@@ -1,21 +1,52 @@
-<svg viewBox="0 0 200 90" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Four households in the same electricity area">
-  <g fill="none" stroke="#2c5282" stroke-width="2" stroke-linejoin="round">
+<svg viewBox="0 0 220 110" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Four households inside the same electricity area">
+  <defs>
+    <style>
+      .house { fill: #ffffff; stroke: #2c5282; stroke-width: 2.5;
+               stroke-linejoin: round; stroke-linecap: round; }
+      .house-door { fill: #e9ecef; stroke: #2c5282; stroke-width: 1.5; }
+      .house-window { fill: #fff3cd; stroke: #2c5282; stroke-width: 1.2; }
+      .area-boundary { fill: none; stroke: #adb5bd; stroke-width: 1.5;
+                       stroke-dasharray: 4,3; }
+      .area-label { fill: #6c757d; font-family: Helvetica, Arial, sans-serif;
+                    font-size: 9px; }
+    </style>
+    <filter id="shadow1" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <!-- elområde boundary frame -->
+  <rect class="area-boundary" x="6" y="14" width="208" height="78" rx="6"/>
+
+  <g filter="url(#shadow1)">
     <!-- House 1 -->
-    <path d="M10,55 L10,32 L25,17 L40,32 L40,55 Z" fill="#ffffff"/>
-    <rect x="20" y="38" width="10" height="17" fill="#ffffff"/>
+    <g transform="translate(22,40)">
+      <path class="house" d="M0,32 L0,12 L18,0 L36,12 L36,32 Z"/>
+      <rect class="house-door" x="14" y="19" width="8" height="13"/>
+      <rect class="house-window" x="5" y="16" width="6" height="6"/>
+    </g>
     <!-- House 2 -->
-    <path d="M60,55 L60,32 L75,17 L90,32 L90,55 Z" fill="#ffffff"/>
-    <rect x="70" y="38" width="10" height="17" fill="#ffffff"/>
+    <g transform="translate(72,40)">
+      <path class="house" d="M0,32 L0,12 L18,0 L36,12 L36,32 Z"/>
+      <rect class="house-door" x="14" y="19" width="8" height="13"/>
+      <rect class="house-window" x="5" y="16" width="6" height="6"/>
+    </g>
     <!-- House 3 -->
-    <path d="M110,55 L110,32 L125,17 L140,32 L140,55 Z" fill="#ffffff"/>
-    <rect x="120" y="38" width="10" height="17" fill="#ffffff"/>
+    <g transform="translate(122,40)">
+      <path class="house" d="M0,32 L0,12 L18,0 L36,12 L36,32 Z"/>
+      <rect class="house-door" x="14" y="19" width="8" height="13"/>
+      <rect class="house-window" x="5" y="16" width="6" height="6"/>
+    </g>
     <!-- House 4 -->
-    <path d="M160,55 L160,32 L175,17 L190,32 L190,55 Z" fill="#ffffff"/>
-    <rect x="170" y="38" width="10" height="17" fill="#ffffff"/>
-    <!-- Dashed area boundary -->
-    <line x1="5" y1="68" x2="195" y2="68" stroke="#6c757d" stroke-dasharray="4,3"/>
+    <g transform="translate(172,40)">
+      <path class="house" d="M0,32 L0,12 L18,0 L36,12 L36,32 Z"/>
+      <rect class="house-door" x="14" y="19" width="8" height="13"/>
+      <rect class="house-window" x="5" y="16" width="6" height="6"/>
+    </g>
   </g>
-  <text x="100" y="83" font-family="Helvetica, Arial, sans-serif"
-        font-size="10" fill="#6c757d" text-anchor="middle">elområde (same area)</text>
+
+  <text class="area-label" x="110" y="105" text-anchor="middle">
+    elområde (same electricity area)
+  </text>
 </svg>

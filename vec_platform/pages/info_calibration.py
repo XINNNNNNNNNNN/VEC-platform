@@ -93,8 +93,19 @@ _CLS_BTN_DISABLED = "mt-4 disabled-look"
 # Dash actually serves them at /dash/assets/.
 _PANEL_SPECS = [
     ("vec-panel-1.svg", "Households in the same area"),
-    ("vec-panel-2.svg", "Some produce energy, others don't"),
-    ("vec-panel-3.svg", "Energy can move between them via the public grid"),
+    # Phase P-2: Panel 2 caption now mentions BESS (battery sharing) and
+    # the timing dimension ("at the right times") — the prior copy
+    # ("Some produce energy, others don't") lost the storage-shifts-in-
+    # time insight that distinguishes a VEC from a pure-PV cooperative.
+    ("vec-panel-2.svg",
+     "Some have solar panels and batteries — they can share excess "
+     "energy at the right times"),
+    # Phase P-2: Panel 3 caption surfaces the dual-benefit price band
+    # (internal price sits between feed-in and retail) — without this,
+    # participants don't see WHY both parties might want to participate.
+    ("vec-panel-3.svg",
+     "Energy moves between them via the public grid — buyers pay "
+     "less than retail, sellers earn more than feed-in"),
     ("vec-panel-4.svg",
      "A portion of the energy is settled internally — your contract "
      "and meter stay the same"),
