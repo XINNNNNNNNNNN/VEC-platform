@@ -1,0 +1,50 @@
+/* Phase O-fix-11: Welcome (Step 0) page styles.
+ *
+ * Dash auto-loads any *.css from this folder at app startup. Scoped
+ * to .vec-description-box / .consent-card / .consent-expand-btn so
+ * other pages don't accidentally pick them up. The .disabled-look and
+ * .step1-hint-text classes used on this page are already defined in
+ * assets/step1.css (Phase O-fix-10); both files load together at app
+ * boot so the welcome page inherits them without duplication.
+ */
+
+.vec-description-box {
+    background: #f8f9fa;
+    border-left: 4px solid #2c5282;
+    padding: 16px 20px;
+    border-radius: 4px;
+    line-height: 1.6;
+}
+
+/* Consent expand toggle. Full-width clickable strip styled to look
+ * like a collapsible header — distinct from a primary action button
+ * so participants don't confuse it with "Next". */
+.consent-expand-btn {
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    padding: 12px 16px;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    font-size: 0.95em;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.consent-expand-btn:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+}
+
+.consent-expand-btn:focus {
+    outline: 2px solid #2c5282;
+    outline-offset: 1px;
+}
+
+/* Once expanded, the consent body inherits Bootstrap card styling but
+ * carries a left border so it visually groups under the toggle. */
+.consent-card {
+    border-left: 4px solid #6c757d;
+    margin-bottom: 16px;
+    margin-top: 4px;
+}

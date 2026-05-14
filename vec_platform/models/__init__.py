@@ -86,8 +86,13 @@ class UserInput(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"))
-    area_m2: Mapped[float] = mapped_column(Float)
-    people: Mapped[int] = mapped_column(Integer)
+    # Phase O-fix-11: relaxed to nullable so Welcome state-2 can INSERT
+    # the user_inputs row carrying entry_threshold_pct *before* Step 1
+    # has captured area / people. Step 1 always writes a non-NULL
+    # value, so production rows that complete the flow still have
+    # populated values — NULL is only the Welcome→Step1 transient.
+    area_m2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    people: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     has_ev: Mapped[bool] = mapped_column(Boolean, default=False)
     has_pv: Mapped[bool] = mapped_column(Boolean, default=False)
     # Phase C reuses pv_kwp / bess_kwh as the canonical user-edited
@@ -158,6 +163,18 @@ class UserInput(Base):
     # below the gate write NULL here.
     occupation: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # ^ 'energy_professional' | 'general_public' | NULL (not asked)
+
+    # Phase O-fix-11: Welcome page state-2 threshold slider — the % of
+    # monthly savings the participant says they would need before
+    # considering joining a VEC. Semantic is intentionally separate
+    # from prior_expectations.pct: that table stores "expected
+    # savings" measurements (round=1 baseline + round=2 post-customize)
+    # whereas this column stores a single decision-economic threshold
+    # captured before the participant sees any platform numbers. Range
+    # 0.0 – 50.0, NULL on rows that pre-date the migration.
+    entry_threshold_pct: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True,
+    )
 
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="user_input")
