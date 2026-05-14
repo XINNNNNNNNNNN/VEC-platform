@@ -1,4 +1,4 @@
-/* Phase P-1 / P-2: info_calibration concept-illustration + arm-info-block.
+/* Phase P-1 / P-2 / P-3: info_calibration concept-illustration + arm-info-block.
  *
  * Dash auto-loads any *.css from this folder. Scoped to
  * .vec-panels-grid / .vec-panel / .arm-info-block so the styles can't
@@ -7,25 +7,31 @@
  * Dash loads every CSS file in the assets folder at boot, so both
  * files are available to every Dash page.
  *
- * Phase P-2 layout change: 4-wide row → 2x2 grid for better visual
- * balance and to give each panel more vertical room for the refined
- * SVG details. Mobile collapses to a single column.
+ * Phase P-2 layout change: 4-wide row → 2x2 grid for visual balance.
+ * Phase P-3 sizing change: panels enlarged ~35-40 % (max-width 800 ->
+ * 1100, panel padding 20 -> 28, icon area 100/130 -> 140/180, caption
+ * 0.92em -> 1.0em) — UAT feedback was that the Phase P-2 panels read
+ * as cramped on full-HD displays; the Phase P-3 sizing gives the
+ * refined SVG details room to breathe without forcing a redraw.
+ * Mobile breakpoint also widened (600 -> 700 px) so common tablet
+ * widths drop into single-column rather than squeezing 2-col layout.
  */
 
 .vec-panels-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(2, auto);
-    gap: 24px;
+    gap: 32px;
     margin: 24px auto;
-    max-width: 800px;
+    max-width: 1100px;
 }
 
 /* Single-column stack on narrow viewports so each panel keeps its
  * full caption width. */
-@media (max-width: 600px) {
+@media (max-width: 700px) {
     .vec-panels-grid {
         grid-template-columns: 1fr;
+        max-width: 100%;
     }
 }
 
@@ -34,7 +40,7 @@
     border: 1px solid #dee2e6;
     border-left: 4px solid #2c5282;
     border-radius: 6px;
-    padding: 20px;
+    padding: 28px;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -43,27 +49,29 @@
 }
 
 .vec-panel-icon {
-    margin-bottom: 14px;
+    margin-bottom: 18px;
     width: 100%;
-    min-height: 100px;
+    min-height: 140px;
+    max-height: 180px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.vec-panel-icon img {
+.vec-panel-icon img,
+.vec-panel-icon svg {
     width: 100%;
-    height: auto;
-    max-height: 130px;
+    height: 100%;
+    max-height: 180px;
     /* The drop-shadow in the SVG itself adds depth; nothing extra
      * needed here. */
 }
 
 .vec-panel-caption {
-    font-size: 0.92em;
+    font-size: 1.0em;
     color: #495057;
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.55;
     font-weight: 500;
 }
 
