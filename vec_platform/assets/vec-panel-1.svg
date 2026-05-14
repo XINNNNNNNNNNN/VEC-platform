@@ -1,0 +1,21 @@
+<svg viewBox="0 0 200 90" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Four households in the same electricity area">
+  <g fill="none" stroke="#2c5282" stroke-width="2" stroke-linejoin="round">
+    <!-- House 1 -->
+    <path d="M10,55 L10,32 L25,17 L40,32 L40,55 Z" fill="#ffffff"/>
+    <rect x="20" y="38" width="10" height="17" fill="#ffffff"/>
+    <!-- House 2 -->
+    <path d="M60,55 L60,32 L75,17 L90,32 L90,55 Z" fill="#ffffff"/>
+    <rect x="70" y="38" width="10" height="17" fill="#ffffff"/>
+    <!-- House 3 -->
+    <path d="M110,55 L110,32 L125,17 L140,32 L140,55 Z" fill="#ffffff"/>
+    <rect x="120" y="38" width="10" height="17" fill="#ffffff"/>
+    <!-- House 4 -->
+    <path d="M160,55 L160,32 L175,17 L190,32 L190,55 Z" fill="#ffffff"/>
+    <rect x="170" y="38" width="10" height="17" fill="#ffffff"/>
+    <!-- Dashed area boundary -->
+    <line x1="5" y1="68" x2="195" y2="68" stroke="#6c757d" stroke-dasharray="4,3"/>
+  </g>
+  <text x="100" y="83" font-family="Helvetica, Arial, sans-serif"
+        font-size="10" fill="#6c757d" text-anchor="middle">elområde (same area)</text>
+</svg>

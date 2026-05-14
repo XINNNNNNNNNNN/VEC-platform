@@ -1,0 +1,81 @@
+/* Phase P-1: info_calibration concept-illustration + arm-info-block.
+ *
+ * Dash auto-loads any *.css from this folder. Scoped to
+ * .vec-panels-grid / .vec-panel / .arm-info-block so the styles can't
+ * leak to other pages. The .disabled-look + .step1-hint-text classes
+ * the layout reuses are defined in assets/step1.css (Phase O-fix-10);
+ * Dash loads every CSS file in the assets folder at boot, so both
+ * files are available to every Dash page.
+ */
+
+.vec-panels-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 20px 0;
+}
+
+/* On narrow viewports the 4-column grid collapses to a 2x2 grid so
+ * the captions stay legible without horizontal scrolling. */
+@media (max-width: 768px) {
+    .vec-panels-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.vec-panel {
+    background: #f8f9fa;
+    border-left: 3px solid #2c5282;
+    border-radius: 4px;
+    padding: 14px 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.vec-panel-icon {
+    margin-bottom: 10px;
+    width: 100%;
+    max-width: 180px;
+    display: flex;
+    justify-content: center;
+}
+
+.vec-panel-icon img {
+    width: 100%;
+    height: auto;
+    max-height: 90px;
+}
+
+.vec-panel-caption {
+    font-size: 0.88em;
+    color: #444;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* The arm-specific saving block. Phase P-1: visually distinct from the
+ * neutral panels above so participants register that the saving figure
+ * is the page's experimental manipulation. */
+.arm-info-block {
+    background: #fff3cd;
+    border-left: 4px solid #f59f00;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin: 16px 0;
+}
+
+.arm-info-block h4 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    color: #856404;
+    font-size: 1.05em;
+    font-weight: 600;
+}
+
+.arm-info-block p {
+    margin-bottom: 0;
+    color: #333;
+    line-height: 1.5;
+}

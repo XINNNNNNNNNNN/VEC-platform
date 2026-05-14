@@ -1,11 +1,29 @@
-"""Info-calibration page — between-subjects framing of expected savings.
+"""info-calibration page — concept illustration + between-subjects framing.
 
-Each session is randomly assigned to one of three arms at creation time
-(see ``main.root``). The page text varies by arm; everyone answers the
-same 7-point Likert about how interested they would be in joining a VEC.
-The Likert response lands in ``willingness_measurements`` with round=1.
+Phase P-1 redesign. The page now has three sections in a fixed order:
 
-Importing this module registers two Dash callbacks against ``dash_app``.
+  1. 4-panel concept illustration (line-art SVGs). All arms see the same
+     four panels; this is the FIRST mechanism reveal in the journey
+     (Welcome page is deliberately abstract per Phase O-fix-12).
+  2. Arm-specific saving info (the between-subjects manipulation).
+     Arm A — optimistic anchor ("15–20%").
+     Arm B — realistic anchor ("3–7%").
+     Arm C — control: explicit "varies / limited data" copy, no number.
+  3. 5-point interest Likert. Phase P-1 narrowed the prior 7-point scale
+     to 5 levels with explicit labels at every step so the scale_type
+     change is visible in DB queries. Persisted with
+     scale_type='5point_interest' (was '7point_interest').
+
+Arm assignment is set at session creation in ``main.root`` and is read
+from ``sessions.info_calibration_arm`` here — Phase P-1 does NOT touch
+the randomization.
+
+The submit-time DB write uses ``upsert_willingness`` so a participant
+who navigates back and changes their answer overwrites the round=1 row
+instead of accumulating duplicates.
+
+Importing this module registers three Dash callbacks against
+``dash_app``.
 """
 
 from dash import html, dcc, no_update
@@ -19,67 +37,87 @@ from vec_platform.pages._helpers import _parse_session_id
 # ==================== arm content ====================
 
 def _arm_content(arm: str):
-    """Return ``(title, body_markdown, likert_question_text)`` for an arm.
+    """Return ``(title, body_paragraph)`` for an arm.
 
-    A — optimistic framing (15-20% savings cited)
-    B — realistic framing (3-7% savings cited)
-    C — control: no anchor figure, generic prompt
+    Phase P-1 copy: shorter and more uniform than the pre-fix-1 prose.
+    Arms A/B share the title 'What participants typically save' so the
+    only visible variation is the number range; Arm C uses a neutral
+    'About savings' title with no anchor figure.
     """
     if arm == "A":
-        title = "What participants typically save"
-        body = (
-            "Recent studies of Virtual Energy Communities suggest that, "
-            "**under favourable conditions**, households can save around "
-            "**15–20% off their monthly electricity bill** by joining a "
-            "VEC. Communities with a good mix of solar generation and "
-            "complementary demand patterns tend to see the largest "
-            "benefits."
+        return (
+            "What participants typically save",
+            "Recent studies suggest households save around 15–20 % off "
+            "their monthly electricity bill by joining a VEC.",
         )
-        likert_q = (
-            "Based on what you've just read, how interested would you "
-            "be in joining a VEC?"
+    if arm == "B":
+        return (
+            "What participants typically save",
+            "Recent studies suggest households save around 3–7 % off "
+            "their monthly electricity bill by joining a VEC.",
         )
-    elif arm == "B":
-        title = "What participants typically save"
-        body = (
-            "Recent studies of Virtual Energy Communities suggest that, "
-            "**on average**, households save around **3–7% off their "
-            "monthly electricity bill** by joining a VEC. Actual savings "
-            "depend heavily on the household's electricity use patterns "
-            "and on the mix of participants in the community."
-        )
-        likert_q = (
-            "Based on what you've just read, how interested would you "
-            "be in joining a VEC?"
-        )
-    else:  # 'C' (control) — also any unexpected value
-        title = "Continue to the next part"
-        body = (
-            "You'll now see what your own electricity profile and bill "
-            "would look like."
-        )
-        likert_q = (
-            "Based on your understanding of VECs so far, how interested "
-            "would you be in joining one?"
-        )
-    return title, body, likert_q
+    # 'C' (control) and any unexpected value.
+    return (
+        "About savings",
+        "Actual savings vary significantly by household and community "
+        "composition. Limited public data is available.",
+    )
 
 
+# Phase P-1: 5-point interest Likert with explicit labels at every
+# step so the response semantic is unambiguous. Stored 1..5 in
+# willingness_measurements.value with scale_type='5point_interest'.
 _LIKERT_OPTIONS = [
-    {"label": "1 — Not at all interested", "value": 1},
-    {"label": "2", "value": 2},
-    {"label": "3", "value": 3},
-    {"label": "4 — Neutral", "value": 4},
-    {"label": "5", "value": 5},
-    {"label": "6", "value": 6},
-    {"label": "7 — Extremely interested", "value": 7},
+    {"label": "Not at all interested",   "value": 1},
+    {"label": "Slightly interested",     "value": 2},
+    {"label": "Moderately interested",   "value": 3},
+    {"label": "Very interested",         "value": 4},
+    {"label": "Definitely would join",   "value": 5},
 ]
+_LIKERT_SCALE_TYPE = "5point_interest"
+
+
+# Phase P-1: shared className constants — the visual rule for the
+# disabled-look Next button cannot drift between the next-visual and
+# submit callbacks.
+_CLS_BTN_ENABLED = "mt-4"
+_CLS_BTN_DISABLED = "mt-4 disabled-look"
+
+
+# ==================== panel helpers ====================
+
+# The 4-panel grid. Captions live next to the icon URL so adding /
+# reordering panels is a single-edit operation. SVG URLs are resolved
+# via dash_app.get_asset_url so the Dash mount prefix (/dash/) is
+# applied automatically; hard-coding "/assets/..." would 404 because
+# Dash actually serves them at /dash/assets/.
+_PANEL_SPECS = [
+    ("vec-panel-1.svg", "Households in the same area"),
+    ("vec-panel-2.svg", "Some produce energy, others don't"),
+    ("vec-panel-3.svg", "Energy can move between them via the public grid"),
+    ("vec-panel-4.svg",
+     "A portion of the energy is settled internally — your contract "
+     "and meter stay the same"),
+]
+
+
+def _build_panel(svg_filename, caption_text):
+    return html.Div([
+        html.Div(
+            html.Img(
+                src=dash_app.get_asset_url(svg_filename),
+                alt=caption_text,
+            ),
+            className="vec-panel-icon",
+        ),
+        html.P(caption_text, className="vec-panel-caption"),
+    ], className="vec-panel")
 
 
 # ==================== layout ====================
 
 def info_calibration_layout(session_id: str | None = None):
-    """Render the page with text matching this session's assigned arm."""
+    """Render the concept illustration + arm-specific framing + interest Likert."""
     if not session_id:
         return html.Div([
             html.H2("Information"),
@@ -93,47 +131,73 @@ def info_calibration_layout(session_id: str | None = None):
 
     db = SessionLocal()
     try:
-        sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        sess = (
+            db.query(SessionModel)
+            .filter(SessionModel.id == session_id)
+            .first()
+        )
         arm = sess.info_calibration_arm if sess else "C"
     finally:
         db.close()
 
-    title, body, likert_q = _arm_content(arm)
+    arm_title, arm_body = _arm_content(arm)
 
     return html.Div([
-        html.H2(title),
+        html.H2("A quick introduction to Virtual Energy Communities"),
+        html.P(
+            "Before we continue, here's how a VEC works at a high level.",
+            className="text-muted mb-4",
+        ),
 
-        dbc.Card([
-            dbc.CardBody(dcc.Markdown(body)),
-        ], className="mb-3"),
+        # 4-panel illustration. All arms see the same four panels —
+        # the concept reveal is held constant; the between-subjects
+        # manipulation is only the arm-specific saving block below.
+        html.Div(
+            [_build_panel(fname, caption) for fname, caption in _PANEL_SPECS],
+            className="vec-panels-grid",
+        ),
 
-        dbc.Card([
-            dbc.CardBody([
-                html.H5(likert_q, className="mb-3"),
-                dcc.RadioItems(
-                    id="info-cal-likert",
-                    options=_LIKERT_OPTIONS,
-                    value=None,
-                    labelStyle={"display": "block"},
-                ),
-            ]),
-        ], className="mb-3"),
+        # Arm-specific saving info. The arm-info-block class styles it
+        # with a yellow left-border to distinguish it from the neutral
+        # panels (without using "savings"-leading visual language in
+        # the panels themselves).
+        html.Div([
+            html.H4(arm_title),
+            html.P(arm_body),
+        ], className="arm-info-block"),
 
-        html.Div(id="info-cal-error", className="text-danger mb-2"),
+        # Interest question.
+        html.Div([
+            html.Label(
+                "Based on what you've read, how interested would you be "
+                "in joining a VEC?",
+                className="form-label fw-bold mb-3 mt-3",
+            ),
+            dcc.RadioItems(
+                id="info-cal-likert",
+                options=_LIKERT_OPTIONS,
+                value=None,
+                labelStyle={"display": "block", "padding": "0.2rem 0"},
+            ),
+            html.Div(id="info-cal-hint", className="step1-hint-text"),
+        ], className="mb-4"),
+
+        # Phase O-fix-10 disabled-look Next button — gray until the
+        # Likert is picked, click-through preserved so an empty-form
+        # click surfaces an inline hint rather than feeling dead.
         dbc.Button(
             "Next",
             id="info-cal-next-btn",
             color="primary",
             size="lg",
-            disabled=True,
+            className=_CLS_BTN_DISABLED,
+            n_clicks=0,
         ),
 
-        # Phase 4-A: destination changed from /dash/step2 (deleted) to
-        # the static /step3 customize page, which lives OUTSIDE the
-        # Dash mount. The root url Location has refresh=False, so Dash
-        # alone won't trigger the full browser navigation needed to
-        # reach the FastAPI route — we use a dedicated refresh=True
-        # Location (same pattern as step3.py / step5.py / step6.py).
+        # Cross-mount navigation Location. The /step3 customize page is
+        # served by FastAPI (outside the Dash mount), so we need a
+        # refresh=True Location to trigger a full browser reload — the
+        # root url Location is refresh=False for in-Dash navigation.
         dcc.Location(id="info-cal-redirect", refresh=True),
     ])
 
@@ -141,61 +205,84 @@ def info_calibration_layout(session_id: str | None = None):
 # ==================== callbacks ====================
 
 @dash_app.callback(
-    Output("info-cal-next-btn", "disabled"),
+    Output("info-cal-next-btn", "className"),
     Input("info-cal-likert", "value"),
 )
-def toggle_info_cal_next(v):
-    """Lock Next until the participant picks a Likert value."""
-    return v is None
+def info_cal_next_visual(likert_value):
+    """Phase P-1 / Phase O-fix-10 disabled-look toggle. Next button
+    leaves disabled-look only when the participant has picked a
+    Likert value (never via the HTML disabled attribute, which would
+    block click-through to the submit callback's hint path)."""
+    if likert_value is None:
+        return _CLS_BTN_DISABLED
+    return _CLS_BTN_ENABLED
+
+
+# Hint-clear callback — wipes the inline hint as soon as the user
+# picks a Likert option, mirroring the Phase O-fix-10 step1.py pattern.
+# allow_duplicate=True is required because submit_info_cal also writes
+# this Output (Dash >= 2.9 accepts the dup when prevent_initial_call=True).
+@dash_app.callback(
+    Output("info-cal-hint", "children", allow_duplicate=True),
+    Input("info-cal-likert", "value"),
+    prevent_initial_call=True,
+)
+def _info_cal_clear_hint(_value):
+    return ""
 
 
 @dash_app.callback(
+    Output("info-cal-hint", "children"),
     Output("info-cal-redirect", "href"),
-    Output("info-cal-error", "children"),
     Input("info-cal-next-btn", "n_clicks"),
     State("info-cal-likert", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
 def submit_info_cal(n_clicks, likert_value, search):
-    """Persist the round-1 willingness measurement and hand off to Step 2.
+    """Validate, persist round=1 willingness, hand off to /step3.
 
-    Phase 4-A: destination is the static /step3 customize page (now
-    "Step 2" in the 7-step flow). Cross-mount navigation forces a full
-    browser reload via the refresh=True info-cal-redirect Location.
+    Phase P-1: scale_type='5point_interest' (was '7point_interest').
+    Phase 4-A: destination /step3 (the static customize page) is
+    outside the Dash mount, so the refresh=True info-cal-redirect
+    Location is required to trigger a full browser navigation.
     """
+    # Phase O-fix-13 defensive guard: prevent_initial_call=True should
+    # already block n_clicks=0 firing, but a no-op early return is
+    # cheap insurance against any Dash edge case.
     if not n_clicks:
         return no_update, no_update
 
     session_id = _parse_session_id(search)
     if not session_id:
-        return no_update, "Session id missing — please start from '/'."
+        return "⚠ Session id missing — please start from '/'.", no_update
     if likert_value is None:
-        return no_update, "Please select an option."
+        return "⚠ Please select an option.", no_update
 
     from vec_platform.models import Session as SessionModel
     from vec_platform.pages._upsert_helpers import upsert_willingness
 
     db = SessionLocal()
     try:
-        sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        sess = (
+            db.query(SessionModel)
+            .filter(SessionModel.id == session_id)
+            .first()
+        )
         if sess is None:
-            return no_update, "Session not found."
-        # Phase E: upsert so a participant pressing Back to info_cal,
-        # changing the Likert, and resubmitting overwrites the round=1
-        # row instead of accumulating duplicates.
+            return "⚠ Session not found.", no_update
+        # Phase E pattern: upsert so a Back-and-resubmit overwrites
+        # the round=1 row in place rather than producing duplicates.
         upsert_willingness(
             db, session_id,
             round_=1,
-            scale_type="7point_interest",
+            scale_type=_LIKERT_SCALE_TYPE,
             value=likert_value,
         )
-        # info_calibration sits between Step 1 and Step 2; the participant
-        # is now moving on to Step 2 (customize devices).
         if sess.current_step is None or sess.current_step < 2:
             sess.current_step = 2
         db.commit()
     finally:
         db.close()
 
-    return f"/step3?session_id={session_id}", ""
+    return "", f"/step3?session_id={session_id}"
