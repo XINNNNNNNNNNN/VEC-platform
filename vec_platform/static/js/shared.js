@@ -140,12 +140,11 @@ const VECCompute = (() => {
   //   chargePerSlot   = 2.5 kW × 0.25 h = 0.625 kWh
   //   dischargePerSlot = 2.5 kW × 0.9 × 0.25 h = 0.5625 kWh
   //
-  // chargeArr / dischargeArr are 96-slot arrays from state.placed.
-  // Either may be null when has_bess is false or the slot is
-  // unscheduled.
-  const BESS_POWER_KW = 2.5;
-  const BESS_EFFICIENCY = 0.9;
-
+  // Phase O-fix-6 (4C): per-slot power is now read directly from the
+  // array values, so BESS_POWER_KW is no longer needed as a constant.
+  // Round-trip efficiency is already baked into the discharge array
+  // values written by the backend (discharge_power_kw = charge_power
+  // × 0.9), so the dispatch loop just uses arr[slot] both ways.
   function _bessWindow(arr) {
     // Phase O-fix-5: return [start, duration] of the contiguous
     // (wrap-aware) non-zero block, or null.
@@ -173,8 +172,6 @@ const VECCompute = (() => {
     const dischargeWin = _bessWindow(dischargeArr);
     if (chargeWin === null && dischargeWin === null) return netLoad;
 
-    const chargePerSlot = BESS_POWER_KW * SLOT_HOURS;
-    const dischargePerSlot = BESS_POWER_KW * BESS_EFFICIENCY * SLOT_HOURS;
     const adjusted = netLoad.slice();
 
     // Reconstruct own_load (pre-PV demand) per slot.
@@ -187,12 +184,15 @@ const VECCompute = (() => {
       const [chargeStart, chargeDur] = chargeWin;
       for (let k = 0; k < chargeDur; k++) {
         const i = (chargeStart + k) % SLOTS_PER_DAY;
+        // Phase O-fix-6: per-slot kWh read from array (4C scaling).
+        const slotChargeKwh = chargeArr[i] * SLOT_HOURS;
+        if (slotChargeKwh <= 0) continue;
         const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
         const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
         const pvUsedForLoad = Math.min(pvKwh, loadKwh);
         const pvRemaining = pvKwh - pvUsedForLoad;
-        const pvToBess = Math.min(pvRemaining, chargePerSlot);
-        const gridToBess = Math.max(0, chargePerSlot - pvToBess);
+        const pvToBess = Math.min(pvRemaining, slotChargeKwh);
+        const gridToBess = Math.max(0, slotChargeKwh - pvToBess);
         adjusted[i] += (pvToBess + gridToBess) / SLOT_HOURS;
       }
     }
@@ -200,11 +200,13 @@ const VECCompute = (() => {
       const [dischargeStart, dischargeDur] = dischargeWin;
       for (let k = 0; k < dischargeDur; k++) {
         const i = (dischargeStart + k) % SLOTS_PER_DAY;
+        const slotDischargeKwh = dischargeArr[i] * SLOT_HOURS;
+        if (slotDischargeKwh <= 0) continue;
         const pvKwh = Math.max(0, pvGen[i]) * SLOT_HOURS;
         const loadKwh = Math.max(0, ownLoad[i]) * SLOT_HOURS;
         const loadAfterPv = Math.max(0, loadKwh - pvKwh);
-        const bessToLoad = Math.min(dischargePerSlot, loadAfterPv);
-        const bessToGrid = Math.max(0, dischargePerSlot - bessToLoad);
+        const bessToLoad = Math.min(slotDischargeKwh, loadAfterPv);
+        const bessToGrid = Math.max(0, slotDischargeKwh - bessToLoad);
         adjusted[i] -= (bessToLoad + bessToGrid) / SLOT_HOURS;
       }
     }

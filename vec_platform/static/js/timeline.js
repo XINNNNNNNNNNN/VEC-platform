@@ -334,6 +334,10 @@
       // two cleanly aligned segments (tail at right, head at left)
       // rather than a single block clipped at the right edge.
       renderTimeline();
+      // Phase O-fix-6: refresh the "My devices" list so the time
+      // string (XX:XX–YY:YY) reflects the new start_slot. Without
+      // this, the list keeps showing the pre-drag time.
+      renderDeviceList();
     }
 
     block.addEventListener("pointerup", endDrag);
@@ -444,13 +448,18 @@
       label.textContent = `${friendly} · ${pos.load_kw} kW · ${rangeLabel(pos.start, pos.duration)}`;
       li.appendChild(label);
 
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "device-remove-btn";
-      removeBtn.type = "button";
-      removeBtn.textContent = "×";
-      removeBtn.title = `Remove ${friendly}`;
-      removeBtn.addEventListener("click", () => removeDevice(name));
-      li.appendChild(removeBtn);
+      // Phase O-fix-6: skip × button for nonRemovable devices (EV +
+      // both BESS schedules). They are added / removed solely via
+      // the Step 1 has_X toggle.
+      if (!meta.nonRemovable) {
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "device-remove-btn";
+        removeBtn.type = "button";
+        removeBtn.textContent = "×";
+        removeBtn.title = `Remove ${friendly}`;
+        removeBtn.addEventListener("click", () => removeDevice(name));
+        li.appendChild(removeBtn);
+      }
 
       ul.appendChild(li);
     }
@@ -471,11 +480,20 @@
     // an option once the user has hit MAX_INSTANCES_PER_BASE for that
     // type, and annotate "(currently N)" / "(max 3 reached)" so the
     // dropdown explains why a type can't be added again.
+    // Phase O-fix-6: singleInstance types (EV + BESS charge/discharge)
+    // are entirely hidden from the dropdown once placed — they cannot
+    // be added a second time and the Step 1 toggle is the only way
+    // to add/remove them.
     let addable = 0;
     for (const baseName of DEVICE_LIST_ORDER) {
       const meta = DEVICE_CATALOG[baseName];
       if (!meta || !meta.draggable) continue;
       const present = countInstancesOfBase(baseName, state.placed);
+      if (meta.singleInstance && present >= 1) {
+        // Skip — already placed, cannot add another, and surfacing it
+        // disabled would just add visual noise.
+        continue;
+      }
       const opt = document.createElement("option");
       opt.value = baseName;        // dropdown carries the bare type;
                                    // addDevice() suffixes it on insert.

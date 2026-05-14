@@ -116,6 +116,12 @@ const DEVICE_CATALOG = {
   // not consume it. The two windows must not overlap; the overlap
   // handler in timeline.js auto-pushes the most-recently-dragged
   // block to the nearest non-overlapping position.
+  // Phase O-fix-6: BESS rows are single-instance per household (one
+  // battery system). Add dropdown filters them out once placed, and
+  // the "My devices" × button is suppressed via nonRemovable. The
+  // load_kw shown here is the default 10 kWh-capacity power (10 / 4 h);
+  // when bess_kwh is calibrated the per-slot value in the array
+  // overrides this default (4C scaling).
   bess_charge: {
     label: "Battery charging",
     color: "#22C55E",        // green
@@ -124,6 +130,8 @@ const DEVICE_CATALOG = {
     default_duration: 16,    // 4 h
     load_kw: 2.5,
     default_include_when_has_bess: true,
+    singleInstance: true,
+    nonRemovable: true,
   },
   bess_discharge: {
     label: "Battery discharging",
@@ -131,13 +139,20 @@ const DEVICE_CATALOG = {
     draggable: true,
     default_start: 72,       // 18:00 (evening retail peak)
     default_duration: 16,    // 4 h
-    load_kw: 2.5,
+    load_kw: 2.25,           // 2.5 × 0.9 efficiency
     default_include_when_has_bess: true,
+    singleInstance: true,
+    nonRemovable: true,
   },
+  // Phase O-fix-6: EV is single-instance per household. Multi-EV is
+  // modelled by summing daily kWh into one block; the participant's
+  // ev_kwh input represents total household commute energy.
   ev_charger: {
     label: "EV charger",
     color: "#A855F7",  // purple
     draggable: true,
+    singleInstance: true,
+    nonRemovable: true,
     // Phase O-fix-1: calibrated to Swedish villa+EV household reality.
     // Schuko 10A nödladdning at 2.3 kW (Elsäkerhetsverket standard,
     // most prevalent setup before dedicated wallbox installation) for

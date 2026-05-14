@@ -12,7 +12,8 @@ from vec_platform.config import (
     GRID_FEE_VARIABLE_RATE,
     grid_fee_fixed,
     APARTMENT_BUILDINGS,
-    BESS_POWER_KW,
+    BESS_DURATION_H,
+    BESS_DURATION_SLOTS,
     BESS_EFFICIENCY,
     BESS_DEFAULT_KWH,
     BESS_MIN_KWH,
@@ -402,10 +403,12 @@ class MockEngine(CalculationEngine):
             return net_load
 
         SLOT_HOURS = 0.25
-        # Per-slot kWh is structurally fixed (power × slot length);
-        # what varies session-to-session is the slot count.
-        charge_per_slot_kwh = BESS_POWER_KW * SLOT_HOURS
-        discharge_per_slot_kwh = BESS_POWER_KW * BESS_EFFICIENCY * SLOT_HOURS
+        # Phase O-fix-6 (4C): per-slot kWh is now read DIRECTLY from
+        # the array values (arr[i] is the slot's kW). Bigger bess_kwh
+        # -> bigger per-slot kW -> bigger per-slot kWh, while the
+        # duration stays at 4 h. The previous design used a global
+        # BESS_POWER_KW constant which broke when bess_kwh deviated
+        # from the implicit 10 kWh assumption.
 
         # Reconstruct own_load (pre-PV demand) per slot to drive the
         # priority decisions. net_load = own_load - pv, so:
@@ -418,19 +421,20 @@ class MockEngine(CalculationEngine):
             charge_start, charge_dur = charge_win
             for k in range(charge_dur):
                 i = (charge_start + k) % SLOTS_PER_DAY
-                # Energy this slot in kWh.
+                # Energy this slot in kWh; charge power read from array.
+                slot_charge_kwh = charge_arr[i] * SLOT_HOURS
+                if slot_charge_kwh <= 0:
+                    continue
                 pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
                 load_kwh = max(0.0, own_load[i]) * SLOT_HOURS
                 # Priority 1: PV serves own_load.
                 pv_used_for_load = min(pv_kwh, load_kwh)
                 pv_remaining = pv_kwh - pv_used_for_load
                 # Priority 2: PV surplus tops up BESS.
-                pv_to_bess = min(pv_remaining, charge_per_slot_kwh)
+                pv_to_bess = min(pv_remaining, slot_charge_kwh)
                 # Priority 3: grid backfills BESS to the per-slot target.
-                grid_to_bess = max(0.0, charge_per_slot_kwh - pv_to_bess)
+                grid_to_bess = max(0.0, slot_charge_kwh - pv_to_bess)
                 # net_load is in kW (energy / 0.25h).
-                # PV captured by BESS would otherwise have exported: net_load
-                # becomes less negative -> add pv_to_bess / SLOT_HOURS.
                 adjusted[i] += (pv_to_bess + grid_to_bess) / SLOT_HOURS
 
         # ---- Discharge window ----
@@ -438,14 +442,17 @@ class MockEngine(CalculationEngine):
             discharge_start, discharge_dur = discharge_win
             for k in range(discharge_dur):
                 i = (discharge_start + k) % SLOTS_PER_DAY
+                slot_discharge_kwh = discharge_arr[i] * SLOT_HOURS
+                if slot_discharge_kwh <= 0:
+                    continue
                 pv_kwh = max(0.0, pv_gen[i]) * SLOT_HOURS
                 load_kwh = max(0.0, own_load[i]) * SLOT_HOURS
                 # Remaining own_load after PV has been applied.
                 load_after_pv = max(0.0, load_kwh - pv_kwh)
                 # Priority 1: BESS supplies own_load (cap at per-slot rate).
-                bess_to_load = min(discharge_per_slot_kwh, load_after_pv)
+                bess_to_load = min(slot_discharge_kwh, load_after_pv)
                 # Priority 2: BESS surplus exports to grid.
-                bess_to_grid = max(0.0, discharge_per_slot_kwh - bess_to_load)
+                bess_to_grid = max(0.0, slot_discharge_kwh - bess_to_load)
                 adjusted[i] -= (bess_to_load + bess_to_grid) / SLOT_HOURS
 
         return adjusted
@@ -629,31 +636,33 @@ class MockEngine(CalculationEngine):
             )
 
         # Phase O-fix-2: BESS charge + discharge windows. Stored as
-        # 96-slot arrays of 2.5 kW (BESS_POWER_KW) so the timeline
-        # renders them as standard draggable blocks. They are
-        # intentionally NOT summed into flexible_load by
-        # generate_profile — energy storage redirects flow rather than
+        # 96-slot arrays of constant kW in the active slots, 0
+        # elsewhere. They are intentionally NOT summed into
+        # flexible_load — energy storage redirects flow rather than
         # consuming it, so the priority dispatch in calculate_bill
         # handles the bill effect explicitly.
-        # Phase O-fix-5: duration scales with user_input.bess_kwh. At
-        # fixed 2.5 kW, duration_slots = round(bess_kwh / 2.5 * 4).
-        # Daily cycle: charge = bess_kwh kWh; discharge = bess_kwh × 0.9
-        # (round-trip loss, applied inside _apply_bess_dispatch).
+        # Phase O-fix-6 (4C model): duration FIXED at 4 hours
+        # (BESS_DURATION_SLOTS = 16); power scales with bess_kwh
+        # (= capacity / 4 hours). 10 kWh -> 2.5 kW; 20 kWh -> 5 kW;
+        # 50 kWh -> 12.5 kW. The dispatch reads power per-slot from
+        # the array directly (no longer relies on a global constant),
+        # so the 4C scaling propagates without further code changes.
         if user_input.has_bess:
             bess_kwh = self._resolve_bess_kwh(user_input)
-            duration_slots = max(
-                1,
-                round((bess_kwh / BESS_POWER_KW) * (SLOTS_PER_DAY / 24)),
-            )
+            power_kw = bess_kwh / BESS_DURATION_H
+            # Discharge effective power applies round-trip loss so the
+            # daily discharge total = bess_kwh × efficiency (e.g. 10
+            # kWh charge -> 9 kWh discharge after 0.9 RT).
+            discharge_power_kw = power_kw * BESS_EFFICIENCY
             devices["bess_charge#1"] = self._device_block(
                 BESS_CHARGE_DEFAULT_START,
-                BESS_CHARGE_DEFAULT_START + duration_slots,
-                BESS_POWER_KW,
+                BESS_CHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                power_kw,
             )
             devices["bess_discharge#1"] = self._device_block(
                 BESS_DISCHARGE_DEFAULT_START,
-                BESS_DISCHARGE_DEFAULT_START + duration_slots,
-                BESS_POWER_KW,
+                BESS_DISCHARGE_DEFAULT_START + BESS_DURATION_SLOTS,
+                discharge_power_kw,
             )
 
         return devices
