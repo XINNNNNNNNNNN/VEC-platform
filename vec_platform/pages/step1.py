@@ -20,6 +20,7 @@ from dash import html, no_update
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 
+from vec_platform import config
 from vec_platform.runtime import dash_app, SessionLocal, calculation_engine
 from vec_platform.pages._helpers import _parse_session_id
 # Phase 3.X-fix-10: share the same vec_familiarity threshold step8 uses to
@@ -155,8 +156,13 @@ def step1_layout(session_id: str | None = None):
                 # that validation when vec_familiarity is below the gate,
                 # so None-occupation low-fam users still pass Next.
                 value=None,
-                className="mb-3",
+                className="mb-2",
             ),
+            # Phase O-fix-10: per-Q hint div for the occupation question.
+            # Lives inside the occupation_block so it disappears with
+            # the rest of Q5 when the block is CSS-hidden for low
+            # vec_familiarity participants.
+            html.Div(id="q5-hint", className="step1-hint-text mb-3"),
         ],
         style={} if show_occupation else {"display": "none"},
     )
@@ -195,8 +201,14 @@ def step1_layout(session_id: str | None = None):
                     id="building-type",
                     options=_BUILDING_TYPE_OPTIONS,
                     value=None,
-                    className="mb-4",
+                    className="mb-2",
                 ),
+                # Phase O-fix-10: per-Q hint div. Always rendered (Dash
+                # needs the component present in the layout to wire
+                # the callback). Populated only when the user submits
+                # with this question unanswered; cleared by the per-Q
+                # hint-clear callback when the user picks a value.
+                html.Div(id="q1-hint", className="step1-hint-text mb-4"),
 
                 # Q2: DER (multi-select, may be empty)
                 html.H5("Q2 · Which of these do you have at home? "
@@ -208,87 +220,237 @@ def step1_layout(session_id: str | None = None):
                     className="mb-4",
                 ),
 
-                # Q3: Area
-                html.H5("Q3 · Approximate floor area of your home (m²)"),
+                # Q3: Area (Phase O-fix-10: 20-500 m² covers a studio
+                # at the low end and a large multi-generation villa at
+                # the high end. Range shown inline so participants know
+                # the supported window before submitting.)
+                html.H5(
+                    f"Q3 · Approximate floor area of your home "
+                    f"({int(config.AREA_MIN_M2)}–{int(config.AREA_MAX_M2)} m²)"
+                ),
                 dbc.Row([
                     dbc.Col(
-                        dbc.Input(id="area", type="number", value=75, min=30, max=300),
+                        dbc.Input(
+                            id="area", type="number", value=75,
+                            min=config.AREA_MIN_M2,
+                            max=config.AREA_MAX_M2,
+                        ),
                         width=4,
                     ),
-                ], className="mb-4"),
+                ], className="mb-2"),
+                html.Div(id="q3-hint", className="step1-hint-text mb-4"),
 
-                # Q4: People
-                html.H5("Q4 · Number of people living in your home"),
+                # Q4: People (Phase O-fix-10: 1-10 covers single-person
+                # households up to multi-generation extended families.)
+                html.H5(
+                    f"Q4 · Number of people living in your home "
+                    f"({config.PEOPLE_MIN}–{config.PEOPLE_MAX})"
+                ),
                 dbc.Row([
                     dbc.Col(
-                        dbc.Input(id="people", type="number", value=2, min=1, max=6),
+                        dbc.Input(
+                            id="people", type="number", value=2,
+                            min=config.PEOPLE_MIN,
+                            max=config.PEOPLE_MAX,
+                        ),
                         width=4,
                     ),
-                ], className="mb-4"),
+                ], className="mb-2"),
+                html.Div(id="q4-hint", className="step1-hint-text mb-4"),
 
                 occupation_block,
 
                 html.Hr(),
-                html.Div(id="step1-error", className="text-danger mb-2"),
-                dbc.Button("Next → Generate my profile", id="btn-next-step1",
-                          color="primary", size="lg", className="mt-2",
-                          # Phase 3.X-fix-16: starts disabled; toggle_step1_next
-                          # callback enables when all required fields are filled
-                          # (matches the disable-toggle pattern used on Steps 3-8).
-                          disabled=True),
+                # Phase O-fix-10: Next button uses CSS .disabled-look
+                # (gray + not-allowed cursor) rather than the HTML
+                # `disabled` attribute. Disabled HTML buttons don't
+                # fire click events, so we couldn't surface per-Q
+                # hints from a click while keeping a disabled visual.
+                # By styling only — never setting the prop — the
+                # button stays clickable and submit_step1 can validate
+                # + populate the hint divs. The step1-error central
+                # banner is gone; per-Q hints replace it.
+                dbc.Button(
+                    "Next → Generate my profile",
+                    id="btn-next-step1",
+                    color="primary",
+                    size="lg",
+                    className="mt-2 disabled-look",
+                    n_clicks=0,
+                ),
             ])
         ]),
     ])
 
 
-# ==================== Step 1 disable-toggle callback (fix-16) =========
-# Mirrors the disable-toggle pattern used on Steps 3-8 so Next visually
-# reflects whether the form is complete. Validation logic is identical
-# to submit_step1's `missing_required` — kept duplicated rather than
-# extracted into a helper because the toggle runs frequently (every
-# Input change) while submit runs once on click; locality of decision
-# beats DRY here. submit_step1 still re-validates on click as a fail-
-# safe against synthetic clicks.
+# ==================== Step 1 validation (Phase O-fix-10) ============
+# Returns {hint_id: message} for every question that fails validation.
+# Empty dict = all valid. Used by both:
+#   - update_next_visual (drives the Next button's className gray/blue)
+#   - submit_step1       (populates per-Q hint divs on submit click)
+# Keeping the predicate in one place stops the two callbacks drifting.
+def _validate_step1(building_type, area, people, occupation,
+                    occupation_required):
+    """Return {hint_div_id: message} for invalid answers.
+
+    ``der_options`` (Q2) is intentionally *not* validated — a household
+    may legitimately own none of PV/BESS/EV, and the checklist's empty
+    state is meaningful data, not a missing answer.
+
+    Range checks for Q3/Q4 use the bounds defined in config (Phase
+    O-fix-10 expansion: 20-500 m² and 1-10 people). Strings or NaN
+    coming through Dash's dbc.Input(type='number') are treated as
+    missing — defensive against synthetic submissions.
+    """
+    hints = {}
+
+    if not building_type:
+        hints["q1-hint"] = "⚠ Please answer this question."
+
+    # Q3 area.
+    if area is None or area == "":
+        hints["q3-hint"] = "⚠ Please enter your home size."
+    else:
+        try:
+            a = float(area)
+            if a != a:  # NaN
+                raise ValueError
+        except (TypeError, ValueError):
+            hints["q3-hint"] = "⚠ Please enter a number."
+        else:
+            if a < config.AREA_MIN_M2 or a > config.AREA_MAX_M2:
+                hints["q3-hint"] = (
+                    f"⚠ Must be between {int(config.AREA_MIN_M2)} "
+                    f"and {int(config.AREA_MAX_M2)} m² "
+                    f"(you entered {a:g})."
+                )
+
+    # Q4 people.
+    if people is None or people == "":
+        hints["q4-hint"] = "⚠ Please enter how many people live in your home."
+    else:
+        try:
+            p = float(people)
+            if p != p:  # NaN
+                raise ValueError
+        except (TypeError, ValueError):
+            hints["q4-hint"] = "⚠ Please enter a number."
+        else:
+            if p < config.PEOPLE_MIN or p > config.PEOPLE_MAX:
+                hints["q4-hint"] = (
+                    f"⚠ Must be between {config.PEOPLE_MIN} "
+                    f"and {config.PEOPLE_MAX} "
+                    f"(you entered {int(p) if p.is_integer() else p:g})."
+                )
+
+    # Q5 only when the participant's vec_familiarity places them in
+    # the expert gate. Low-fam users don't see the question; we must
+    # not flag them as failing it.
+    if occupation_required and not occupation:
+        hints["q5-hint"] = "⚠ Please answer this question."
+
+    return hints
+
+
+def _occupation_required(session_id):
+    """Lookup-helper: does this session require the Q5 answer?
+
+    Mirrors the gate used by step1_layout's `show_occupation` so the
+    visual rendering and the validation pivot on identical state.
+    """
+    if not session_id:
+        return False
+    from vec_platform.models import Session as SessionModel
+    _db = SessionLocal()
+    try:
+        _sess = (
+            _db.query(SessionModel)
+            .filter(SessionModel.id == session_id)
+            .first()
+        )
+        return (
+            _sess is not None
+            and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
+        )
+    finally:
+        _db.close()
+
+
+# ==================== Step 1 Next-button visual callback ============
+# Phase O-fix-10: drives the Next button's className based on whether
+# all required questions are answered. We deliberately do NOT use the
+# `disabled` prop — an HTML disabled button doesn't fire click events,
+# which would mean a user clicking it never sees the per-Q hint
+# feedback they need to understand why Next isn't working.
+#
+# Returned classes:
+#   - all valid:  "mt-2"                — Bootstrap's btn-primary
+#                                          color (set by dbc.Button
+#                                          color='primary') comes
+#                                          through; button looks active.
+#   - any error:  "mt-2 disabled-look"  — .disabled-look CSS rule
+#                                          forces gray background +
+#                                          not-allowed cursor while
+#                                          leaving click events alive.
 @dash_app.callback(
-    Output("btn-next-step1", "disabled"),
+    Output("btn-next-step1", "className"),
     Input("building-type", "value"),
     Input("area", "value"),
     Input("people", "value"),
     Input("occupation", "value"),
     Input("url", "search"),
 )
-def toggle_step1_next(building_type, area, people, occupation, search):
-    """Enable Next only when every required field is filled.
-
-    Required: building_type, area, people. occupation is conditionally
-    required (only when sessions.vec_familiarity is in the top 2 of the
-    5-pt scale, i.e. the same gate that decides whether Q5 is even
-    visible). der_options is *not* required — a household may legitimately
-    have none of PV/BESS/EV.
-    """
-    from vec_platform.models import Session as SessionModel
-
+def update_next_visual(building_type, area, people, occupation, search):
     session_id = _parse_session_id(search)
-    occupation_required = False
-    if session_id:
-        _db = SessionLocal()
-        try:
-            _sess = _db.query(SessionModel).filter(SessionModel.id == session_id).first()
-            occupation_required = (
-                _sess is not None
-                and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
-            )
-        finally:
-            _db.close()
+    occ_required = _occupation_required(session_id)
+    hints = _validate_step1(building_type, area, people, occupation,
+                            occ_required)
+    if hints:
+        return "mt-2 disabled-look"
+    return "mt-2"
 
-    missing_required = (
-        not building_type
-        or area is None
-        or people is None
-        or (occupation_required and not occupation)
-    )
-    # True → button stays disabled; False → enabled.
-    return missing_required
+
+# ==================== Step 1 per-Q hint-clear callbacks =============
+# Phase O-fix-10: when the participant edits an input, immediately wipe
+# the matching hint so the page stops scolding them while they're
+# fixing it. Output collisions with submit_step1's hint Outputs are
+# resolved via Dash's allow_duplicate=True (requires Dash >= 2.9; the
+# project uses Dash 4.1+). prevent_initial_call avoids wiping hints
+# that submit_step1 just rendered.
+@dash_app.callback(
+    Output("q1-hint", "children", allow_duplicate=True),
+    Input("building-type", "value"),
+    prevent_initial_call=True,
+)
+def _clear_q1_hint(_value):
+    return ""
+
+
+@dash_app.callback(
+    Output("q3-hint", "children", allow_duplicate=True),
+    Input("area", "value"),
+    prevent_initial_call=True,
+)
+def _clear_q3_hint(_value):
+    return ""
+
+
+@dash_app.callback(
+    Output("q4-hint", "children", allow_duplicate=True),
+    Input("people", "value"),
+    prevent_initial_call=True,
+)
+def _clear_q4_hint(_value):
+    return ""
+
+
+@dash_app.callback(
+    Output("q5-hint", "children", allow_duplicate=True),
+    Input("occupation", "value"),
+    prevent_initial_call=True,
+)
+def _clear_q5_hint(_value):
+    return ""
 
 
 # ==================== Step 1 submit callback ====================
@@ -302,7 +464,14 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
 @dash_app.callback(
     Output("url", "pathname"),
     Output("url", "search"),
-    Output("step1-error", "children"),
+    # Phase O-fix-10: per-Q hint Outputs. allow_duplicate not needed
+    # here because this callback is the canonical writer; the per-Q
+    # clear callbacks declare allow_duplicate on their copies of
+    # these Outputs.
+    Output("q1-hint", "children"),
+    Output("q3-hint", "children"),
+    Output("q4-hint", "children"),
+    Output("q5-hint", "children"),
     Input("btn-next-step1", "n_clicks"),
     State("building-type", "value"),
     State("der-options", "value"),
@@ -315,36 +484,31 @@ _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
 def submit_step1(n_clicks, building_type, der_options, area, people,
                  occupation, search):
     if not n_clicks:
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
     from vec_platform.models import Session as SessionModel, UserInput
 
-    # Phase 3.X-fix-10: occupation is only required when the Q5 widget is
-    # actually rendered. The widget is conditionally rendered on a
-    # vec_familiarity threshold; for users below the gate the State ref
-    # comes back as None (suppress_callback_exceptions=True), and that's
-    # a legitimate "not asked" — not a missing answer.
+    # Phase O-fix-10: validate every required answer up-front and
+    # populate per-Q hint divs. The validate helper is the same one
+    # update_next_visual uses, so visual disable-look and submit-time
+    # rejection are guaranteed to agree.
     session_id = _parse_session_id(search)
-    occupation_required = False
-    if session_id:
-        _db = SessionLocal()
-        try:
-            _sess = _db.query(SessionModel).filter(SessionModel.id == session_id).first()
-            occupation_required = (
-                _sess is not None
-                and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
-            )
-        finally:
-            _db.close()
+    occ_required = _occupation_required(session_id)
+    hints = _validate_step1(building_type, area, people, occupation,
+                            occ_required)
+    if hints:
+        return (
+            no_update, no_update,
+            hints.get("q1-hint", ""),
+            hints.get("q3-hint", ""),
+            hints.get("q4-hint", ""),
+            hints.get("q5-hint", ""),
+        )
 
-    missing_required = (
-        not building_type
-        or area is None
-        or people is None
-        or (occupation_required and not occupation)
-    )
-    if missing_required:
-        return no_update, no_update, "Please answer all questions before continuing."
+    # All required answers valid. Adopt the canonical numeric form so
+    # the DB write below operates on a float / int.
+    area = float(area)
+    people = int(float(people))
 
     der = der_options or []
     has_pv = "pv" in der
@@ -582,4 +746,8 @@ def submit_step1(n_clicks, building_type, der_options, area, people,
     # The /dash/tenant_disclaimer page is still mounted by main.py for
     # any rollback flow that wants to re-enable it.
     next_path = "/dash/info_calibration"
-    return next_path, f"?session_id={session_id}", ""
+    # Phase O-fix-10: clear every hint on the success path (defensive —
+    # the per-Q clear callbacks already wipe them as the participant
+    # corrected each field, but a synthetic click that bypasses the
+    # input events would otherwise leave stale text behind).
+    return next_path, f"?session_id={session_id}", "", "", "", ""

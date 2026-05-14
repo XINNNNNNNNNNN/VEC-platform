@@ -1,0 +1,42 @@
+/* Phase O-fix-10: Step 1 disabled-look Next button + per-Q hints.
+ *
+ * Dash auto-loads any *.css from this folder at app startup; no
+ * registration code needed. Scope rules to .disabled-look and
+ * .step1-hint-text so this file is safe to keep page-agnostic — any
+ * Dash page that wants the same UX can re-use the classes.
+ *
+ * Why a CSS-only disabled state instead of the HTML `disabled` attribute:
+ * disabled buttons don't fire click events, so the participant would
+ * click Next while required answers are missing and get no feedback
+ * about what's wrong. With CSS we keep the gray + not-allowed visual
+ * cue while letting clicks reach the Dash callback, which then renders
+ * a per-question hint next to whichever field needs attention.
+ */
+
+.disabled-look {
+    background-color: #e0e0e0 !important;
+    color: #888 !important;
+    border-color: #d0d0d0 !important;
+    cursor: not-allowed;
+    box-shadow: none !important;
+    /* IMPORTANT: do NOT add pointer-events: none here — that would
+       block the click and defeat the inline-hint pattern. */
+}
+
+.disabled-look:hover,
+.disabled-look:focus,
+.disabled-look:active {
+    background-color: #e0e0e0 !important;
+    color: #888 !important;
+    border-color: #d0d0d0 !important;
+    box-shadow: none !important;
+}
+
+/* Per-question inline hint. min-height stops the form jumping when
+   the message appears or clears. */
+.step1-hint-text {
+    color: #c00;
+    font-size: 0.85em;
+    line-height: 1.2;
+    min-height: 1.2em;
+}

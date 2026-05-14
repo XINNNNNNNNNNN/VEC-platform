@@ -150,6 +150,21 @@ BESS_EFFICIENCY = 0.9
 PV_DEFAULT_KWP = 5.0
 PV_MIN_KWP = 1.0
 PV_MAX_KWP = 25.0
+
+# Phase O-fix-10: Step 1 Q3 (home area) / Q4 (people) range expansion.
+# Previous Step 1 had area 30-300 m² and people 1-6, which excluded
+# both extremes — a 20 m² studio and a 10-person multi-generation
+# villa are legitimate Swedish households. The Step 1 submit callback
+# clamps user input to the NEAREST boundary (not the default) because
+# values come from an explicit household declaration and should be
+# respected rather than reset. Contrast with Step 3 calibration where
+# 0 = "I don't know" semantic → fallback to default (Phase O-fix-8/9).
+# Defaults below are NOT changed (area=75, people=2 remain seeded by
+# step1.py's dbc.Input(value=...)); only the range expands.
+AREA_MIN_M2 = 20.0
+AREA_MAX_M2 = 500.0
+PEOPLE_MIN = 1
+PEOPLE_MAX = 10
 # BESS_POWER_KW removed — power is now derived per-session as
 # bess_kwh / BESS_DURATION_H, stored slot-by-slot in the device
 # array so both backend and JS read it the same way.
