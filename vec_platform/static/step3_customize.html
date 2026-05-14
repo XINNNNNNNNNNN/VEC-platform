@@ -220,6 +220,12 @@
     </div>
   </div>
 
+  <!-- Phase O-fix-8: toast container for calibration auto-correct
+       feedback. Lives at the document end so the fixed-position
+       stack overlays the bill card without leaking into print
+       layout. Styled by .vec-toast-* rules in timeline.css. -->
+  <div id="vec-toast-container" class="vec-toast-container" aria-live="polite"></div>
+
   <script src="/static/js/api.js"></script>
   <script src="/static/js/devices.js"></script>
   <script src="/static/js/shared.js"></script>

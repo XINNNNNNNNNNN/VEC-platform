@@ -540,3 +540,45 @@
   margin-bottom: 0;
   font-size: 0.92rem;
 }
+
+/* Phase O-fix-8: lightweight toast for calibration auto-correct +
+   future transient feedback (e.g. BESS auto-push). Bootstrap's own
+   toast component would pull in a Bootstrap JS dependency we don't
+   load on /step3 — this hand-rolled stack is ~40 lines and stays
+   internal. */
+.vec-toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.vec-toast {
+  pointer-events: auto;
+  min-width: 260px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-size: 0.9rem;
+  color: #212529;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.vec-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vec-toast-info  { border-left-color: #3b82f6; }
+.vec-toast-warn  { border-left-color: #f59e0b; }
+.vec-toast-error { border-left-color: #dc2626; }

@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from vec_platform import config
 from vec_platform.main import get_db
 from vec_platform.models import BillBreakdown, DailyProfile, UserInput
 from vec_platform.runtime import calculation_engine
@@ -59,6 +60,48 @@ _PATCHABLE_FIELDS = (
 _AFFECTS_BASELINE = ("pv_kwp", "bess_kwh", "ev_kwh", "load_scale_factor")
 
 _CASCADE_SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
+
+
+# Phase O-fix-8: bound calibration writes to physically meaningful
+# ranges. The engine fallbacks (_resolve_bess_kwh, _resolve_ev_daily_kwh)
+# already coerce out-of-range values to the default before any bill
+# computation, but the unvalidated value was still persisted to the
+# DB *and* echoed back through /api/profile, leaving the input box
+# showing the bogus number. This map drives validation + the
+# `corrected` dict returned to the client so the UI can both reset
+# the input box and surface a toast explaining what happened.
+#
+#   field    : (min, max, default)
+_FIELD_BOUNDS = {
+    "bess_kwh": (config.BESS_MIN_KWH, config.BESS_MAX_KWH, config.BESS_DEFAULT_KWH),
+    "ev_kwh":   (config.EV_MIN_DAILY_KWH, config.EV_MAX_DAILY_KWH, config.EV_DEFAULT_DAILY_KWH),
+}
+
+
+def _validate_and_correct(touched, ui):
+    """Phase O-fix-8: clamp out-of-range capacities back to defaults.
+
+    Returns the ``corrected`` dict that maps each clamped field to the
+    default the engine actually used. The caller passes this through
+    in the response so the client can update the input box and show a
+    toast. Mutates ``ui`` in place so the persisted row carries the
+    corrected value (never the bogus one).
+    """
+    corrected = {}
+    for field, (lo, hi, default) in _FIELD_BOUNDS.items():
+        if field not in touched:
+            continue
+        raw = getattr(ui, field, None)
+        if raw is None:
+            continue
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            v = None
+        if v is None or v < lo or v > hi:
+            setattr(ui, field, default)
+            corrected[field] = default
+    return corrected
 
 
 def _cascade_rewrite_step2_baseline(db: Session, ui: UserInput) -> None:
@@ -165,7 +208,14 @@ def update_calibration(
 
     if not touched:
         # No fields to patch — short-circuit before commit.
-        return {"status": "ok", "touched": []}
+        return {"status": "ok", "touched": [], "corrected": {}}
+
+    # Phase O-fix-8: validate ranges and snap out-of-range writes back
+    # to defaults BEFORE the cascade. Otherwise the cascade computes a
+    # bill from the engine fallback (correct number) but the DB and
+    # the input box keep the bogus value, so the user sees a mismatch
+    # between what they typed and what their bill reflects.
+    corrected = _validate_and_correct(touched, ui)
 
     # Phase K-2 fix-1: cascade-rewrite the step=2 baseline so SQL
     # audit and /step5 lazy regen produce the same numbers. Only
@@ -176,4 +226,4 @@ def update_calibration(
         _cascade_rewrite_step2_baseline(db, ui)
 
     db.commit()
-    return {"status": "ok", "touched": touched}
+    return {"status": "ok", "touched": touched, "corrected": corrected}

@@ -46,6 +46,31 @@
     el.classList.remove("d-none");
   }
 
+  // Phase O-fix-8: lightweight toast helper. Used by the calibration
+  // PUT path to surface "out-of-range, snapped to default" feedback
+  // when the backend clamps an input. Defaults to ~4s on screen with
+  // a 200ms fade. No external dependencies — Bootstrap's toast
+  // component isn't loaded on /step3.
+  //
+  //   showToast("EV daily charge must be 2–24 kWh. Reset to 8.");
+  //   showToast("Saved", { kind: "info", ms: 1500 });
+  function showToast(message, opts) {
+    const container = $("vec-toast-container");
+    if (!container) return;
+    const kind = (opts && opts.kind) || "warn";   // info | warn | error
+    const ms = (opts && opts.ms) || 4000;
+    const el = document.createElement("div");
+    el.className = `vec-toast vec-toast-${kind}`;
+    el.textContent = message;
+    container.appendChild(el);
+    // Trigger CSS transition in next frame so .show animates in.
+    requestAnimationFrame(() => el.classList.add("show"));
+    setTimeout(() => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 250);
+    }, ms);
+  }
+
   // ---- Timeline rendering ----
   function renderAxis() {
     const axis = document.createElement("div");
@@ -488,6 +513,15 @@
     for (const baseName of DEVICE_LIST_ORDER) {
       const meta = DEVICE_CATALOG[baseName];
       if (!meta || !meta.draggable) continue;
+      // Phase O-fix-8: gate EV / BESS rows by the Step 1 has_X toggle.
+      // Without this filter the dropdown surfaces "EV charger" /
+      // "Battery charging" / "Battery discharging" options even for
+      // participants who declared has_ev=False / has_bess=False on
+      // Step 1, letting them bypass the survey gate and inflating
+      // their bill with devices they don't own.
+      if (baseName === "ev_charger" && !state.hasEv) continue;
+      if (baseName === "bess_charge" && !state.hasBess) continue;
+      if (baseName === "bess_discharge" && !state.hasBess) continue;
       const present = countInstancesOfBase(baseName, state.placed);
       if (meta.singleInstance && present >= 1) {
         // Skip — already placed, cannot add another, and surfacing it
@@ -1015,7 +1049,17 @@
     const chk = document.getElementById(`${prefix}-capacity-unknown`);
     const known = !chk.checked;
     const raw = Number(inp.value);
-    const value = Number.isFinite(raw) && raw > 0 ? raw : meta.default;
+    // Phase O-fix-8: send the RAW user value (even 0 or out-of-range)
+    // so the backend's _validate_and_correct can detect it and reply
+    // with a `corrected` entry. The previous logic silently rewrote
+    // `0` → meta.default on the client, which made the backend see a
+    // valid value, skip correction, and return no toast — leaving
+    // the DOM input box stuck at 0 while the DB and bill silently
+    // used the default. The only client-side coercion still needed
+    // is NaN protection (e.g. blank input box → empty string →
+    // NaN); a blank field falls back to the default so the PUT
+    // payload remains numeric.
+    const value = Number.isFinite(raw) ? raw : meta.default;
     return {
       [meta.col]: value,
       [`${prefix}_calibrated`]: known,
@@ -1028,6 +1072,18 @@
     _calibrationTimer = setTimeout(persistCalibration, 300);
   }
 
+  // Phase O-fix-8: reverse-lookup tables for the calibration PUT
+  // response. Backend returns `corrected: {bess_kwh: 10, ev_kwh: 8}`
+  // when a value is out of range; we need to (a) find the matching
+  // DOM input by id-prefix to overwrite the user's bogus number, and
+  // (b) build a human label for the toast.
+  const _COL_TO_PREFIX = { pv_kwp: "pv", bess_kwh: "bess", ev_kwh: "ev" };
+  const _COL_TO_LABEL = {
+    pv_kwp:   { name: "PV capacity",      unit: "kW",       range: "" },
+    bess_kwh: { name: "Battery capacity", unit: "kWh",      range: "2–50" },
+    ev_kwh:   { name: "EV daily charge",  unit: "kWh/day",  range: "2–24" },
+  };
+
   async function persistCalibration() {
     if (!state.sessionId) return;
     const patch = _calibrationPatchPending;
@@ -1036,6 +1092,7 @@
     if (Object.keys(patch).length === 0) return;
     const body = { session_id: state.sessionId, ...patch };
     let ok = false;
+    let corrected = null;
     try {
       const r = await fetch("/api/user_input/calibration", {
         method: "PUT",
@@ -1043,12 +1100,39 @@
         body: JSON.stringify(body),
       });
       ok = r.ok;
-      if (!r.ok) {
+      if (r.ok) {
+        // Phase O-fix-8: read the corrected dict so the UI can
+        // resync. JSON parse may throw on a server that returns
+        // empty body — swallow defensively.
+        try {
+          const data = await r.json();
+          corrected = (data && data.corrected) || null;
+        } catch (_) {
+          corrected = null;
+        }
+      } else {
         const detail = await r.text().catch(() => "");
         console.warn("Calibration persist failed:", r.status, detail);
       }
     } catch (e) {
       console.warn("Calibration persist error:", e);
+    }
+    // Phase O-fix-8: apply backend's auto-correct to the DOM input
+    // box + show a toast. Without this the user keeps seeing "0" or
+    // "100" in the input even though the bill reflects the engine
+    // fallback default, which looks like a broken interaction.
+    if (corrected) {
+      for (const [col, defaultValue] of Object.entries(corrected)) {
+        const prefix = _COL_TO_PREFIX[col];
+        if (!prefix) continue;
+        const inp = document.getElementById(`${prefix}-capacity-input`);
+        if (inp) inp.value = defaultValue;
+        const lbl = _COL_TO_LABEL[col] || { name: col, unit: "", range: "" };
+        const msg = lbl.range
+          ? `${lbl.name} must be ${lbl.range} ${lbl.unit}. Reset to ${defaultValue}.`
+          : `${lbl.name} was out of range. Reset to ${defaultValue}.`;
+        showToast(msg, { kind: "warn", ms: 4000 });
+      }
     }
     // Phase D-1: after the PUT lands, refresh the baseline so the
     // chart + bill reflect the new PV / scaling. The fix-18 ±5%
