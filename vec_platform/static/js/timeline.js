@@ -738,7 +738,17 @@
       const bounds = VECCompute.extractBounds(arr);
       const start = bounds ? bounds.start : (catalogMeta.default_start ?? 0);
       const duration = bounds ? bounds.duration : (catalogMeta.default_duration ?? 4);
-      const load_kw = catalogMeta.load_kw ?? (bounds ? arr[bounds.start] : 1.0);
+      // Phase O-fix-6+: prefer the array value (session-correct,
+      // server-rendered after cascade) over the catalog default
+      // (a fresh-seed reference). Catalog load_kw was previously
+      // winning via `??`, which broke variable-power devices
+      // like bess_charge / bess_discharge whose array value
+      // depends on bess_kwh (4C model). Static-power devices
+      // (cooking, dishwasher, ev_charger) read identical values
+      // from both sources, so this change is a no-op for them.
+      const load_kw = (bounds && Number.isFinite(arr[bounds.start]) && arr[bounds.start] > 0)
+        ? arr[bounds.start]
+        : (catalogMeta.load_kw ?? 1.0);
       // Reset target: catalog defaults (what the engine seeds at
       // step=2). Live position: bounds-first (what the user last
       // dragged to, or the catalog default on first visit).
@@ -943,7 +953,16 @@
         const start = existing && existing.start != null
           ? existing.start          // preserve user's drag
           : bounds.start;           // first seed
-        const load_kw = catalogMeta.load_kw ?? arr[bounds.start];
+        // Phase O-fix-6+: prefer the cascade-rewritten array value
+        // (session-correct) over the catalog default. The previous
+        // `??` precedence ignored the array for any device whose
+        // catalog defined load_kw — that includes the variable-power
+        // bess_charge / bess_discharge (catalog 2.5 kW seed vs
+        // array 5.0 kW after bess_kwh=20 calibration), which made
+        // the on-page bill refuse to update.
+        const load_kw = (Number.isFinite(arr[bounds.start]) && arr[bounds.start] > 0)
+          ? arr[bounds.start]
+          : (catalogMeta.load_kw ?? 1.0);
         state.placed[name] = {
           start,
           duration: bounds.duration,
