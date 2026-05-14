@@ -49,26 +49,29 @@ from vec_platform.pages._helpers import _parse_session_id
 
 # ==================== Welcome (Step 0) ====================
 
-# Ei-neutral VEC description. Deliberately avoids "reduce bills",
-# "discount", "better price", "savings come from how the community
-# settles" — those phrasings used to live here (pre-fix-11) and
-# anchored participants toward expecting savings before they'd seen
-# any data. The replacement copy mirrors Energimarknadsinspektionen's
-# regulatory definition and is explicit that whether participation
-# pays off is conditional on amount / timing / sharing prices / fees
-# and taxes — the participant decides whether to expect savings.
+# Phase O-fix-12: abstract Ei-neutral VEC description. Phase O-fix-11
+# stripped the "reduce bills / discount / better price" leading copy
+# but still leaked the *mechanism* (solar PV surplus, public grid
+# deduction) — that primed Layer 1 baseline measurement by giving
+# participants a concrete who-benefits-and-how model before they
+# answered the threshold question. The fix-12 version describes WHAT
+# a VEC is (legal/social framework: a group of households in the
+# same elområde, an internal-vs-market settlement) without specifying
+# HOW it works mechanically; mechanism understanding is the explicit
+# subject of the Step 1 / Step 3 expectation rounds. Saving-factor
+# list now leads with "community composition" so the participant
+# considers WHO is in the community, not just timing/pricing.
 _VEC_DESCRIPTION_LINE_1 = (
     "A group of households in the same electricity area (elområde) "
-    "that share locally produced renewable electricity through the "
-    "public grid. Households with solar panels can share their surplus "
-    "with neighbours; participants who use that shared energy have it "
-    "deducted from their total billed consumption."
+    "that participate together in local energy use. Within the "
+    "community, a portion of the electricity used can be settled "
+    "internally rather than entirely against the broader market."
 )
 _VEC_DESCRIPTION_LINE_2 = (
     "You keep your existing electricity contract and meter. Whether "
-    "participation results in savings depends on how much energy is "
-    "shared, when it is shared, the agreed sharing prices, and grid "
-    "fees and taxes that still apply."
+    "participation results in savings depends on community "
+    "composition, how energy use is timed, the internal settlement "
+    "arrangement, and grid fees and taxes that continue to apply."
 )
 
 
