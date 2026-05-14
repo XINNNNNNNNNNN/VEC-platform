@@ -292,19 +292,25 @@ def step0_layout(session_id: str | None = None):
                      className="step1-hint-text"),
         ], className="mb-4"),
 
-        # Threshold slider.
+        # Threshold slider. Phase O-fix-13: copy refined to read like a
+        # decision threshold ("minimum monthly saving … that would make
+        # you decide to join") rather than an expectation prediction.
+        # First-person slider labels make the two endpoints concrete:
+        # the 0% end now explicitly names environmental / local-grid
+        # motivation, the 50% end states the high-bar joining condition.
         html.Div([
             html.Label(
-                "In general, how much saving would you need before "
-                "considering joining such a community?",
+                "What is the minimum monthly saving (as % of your "
+                "electricity bill) that would make you decide to join "
+                "such a community?",
                 className="form-label fw-bold mb-2",
             ),
-            html.Small(
-                "0% = no saving needed (environmental / social "
-                "reasons). 50% = would only join with very high "
-                "savings.",
-                className="text-muted mb-3 d-block",
-            ),
+            html.Small([
+                "0% = I would join even with no savings — to support "
+                "the environment or the local grid.",
+                html.Br(),
+                "50% = I would only join if savings are very high.",
+            ], className="text-muted mb-3 d-block"),
             dcc.Slider(
                 id="welcome-threshold-slider",
                 min=0, max=50, step=1, value=0,
@@ -374,11 +380,22 @@ def welcome_state1_next_visual(consent):
     Output("welcome-state1-hint", "children"),
     Output("welcome-state-1", "style"),
     Output("welcome-state-2", "style"),
+    # Phase O-fix-13: ALSO clear any State 2 hint text on transition.
+    # The per-Q clear callbacks added in Phase O-fix-11 wipe hints on
+    # value change, but a participant who clicked the State 1 Next
+    # without first interacting with State 2 (e.g. used the browser
+    # back button after a previous gray-Next click) would re-enter
+    # State 2 with stale hint text still rendered. Clearing them here
+    # makes the transition a true reset. allow_duplicate is required
+    # because welcome_state2_submit also writes these Outputs (Dash
+    # >= 2.9 accepts the dup when paired with prevent_initial_call).
+    Output("welcome-familiarity-hint", "children", allow_duplicate=True),
+    Output("welcome-threshold-hint", "children", allow_duplicate=True),
     Input("welcome-state1-next", "n_clicks"),
     State("welcome-consent-checkbox", "value"),
     prevent_initial_call=True,
 )
-def welcome_state1_submit(n_clicks, consent):
+def welcome_state1_submit(_n_clicks, consent):
     """Validate consent. If unchecked, surface an inline hint; if
     checked, hide State 1 and reveal State 2 in the same DOM."""
     if not consent:
@@ -387,8 +404,10 @@ def welcome_state1_submit(n_clicks, consent):
             "continue.",
             no_update,
             no_update,
+            no_update,
+            no_update,
         )
-    return ("", {"display": "none"}, {})
+    return ("", {"display": "none"}, {}, "", "")
 
 
 @dash_app.callback(
@@ -456,7 +475,7 @@ def _welcome_clear_threshold_hint(_value):
     State("url", "search"),
     prevent_initial_call=True,
 )
-def welcome_state2_submit(_n_clicks, familiarity, threshold_pct, touched,
+def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
                           search):
     """Validate familiarity + threshold-touched, then write to DB and
     navigate to /step1.
@@ -467,12 +486,16 @@ def welcome_state2_submit(_n_clicks, familiarity, threshold_pct, touched,
     table keeps the "expected savings" semantic and will be written
     by a later step's expectation question, not by this threshold
     question (Phase O-fix-11 schema decision).
-
-    ``prevent_initial_call=True`` on the decorator means the callback
-    cannot fire with n_clicks=0, so the parameter is only needed to
-    keep the positional alignment with the @callback Input list — the
-    leading underscore silences the unused-parameter linter.
     """
+    # Phase O-fix-13: explicit n_clicks guard. prevent_initial_call=True
+    # on the decorator should already prevent firing at initial render,
+    # but a defensive bail-out costs nothing and protects against any
+    # Dash-side edge case (synthetic prop-change events, BFCache
+    # restore, etc.) where the callback would otherwise see n_clicks=0
+    # and run validation before the participant ever clicked Next.
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update
+
     fam_hint = ""
     thr_hint = ""
     if not familiarity:
