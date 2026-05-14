@@ -135,6 +135,21 @@ BESS_MAX_KWH = 50.0
 BESS_DURATION_H = 4.0          # FIXED 4C charge/discharge window
 BESS_DURATION_SLOTS = 16       # 4h × 4 quarter-slots
 BESS_EFFICIENCY = 0.9
+
+# Phase O-fix-9: pv_kwp range validation (parallels BESS / EV bounds).
+# PV_MIN_KWP = 1.0 picks the smallest meaningful residential install
+# (a single 400 W balcony panel + microinverter rounds up to ~1 kWp);
+# anything below that is closer to "no PV" than calibrated capacity
+# and should fall back to the median villa default. PV_MAX_KWP = 25.0
+# is the residential upper bound a Swedish villa can realistically
+# mount on a single roof (~120 m² of panels at 200 W/m²); commercial
+# arrays go higher but are out of platform scope. PV_DEFAULT_KWP is
+# the consolidated 5.0 value previously living only in
+# pages/step1.py::_DEFAULT_PV_KWP — same number, just promoted to
+# config so calibration._FIELD_BOUNDS can reference it.
+PV_DEFAULT_KWP = 5.0
+PV_MIN_KWP = 1.0
+PV_MAX_KWP = 25.0
 # BESS_POWER_KW removed — power is now derived per-session as
 # bess_kwh / BESS_DURATION_H, stored slot-by-slot in the device
 # array so both backend and JS read it the same way.

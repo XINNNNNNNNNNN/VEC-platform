@@ -1078,8 +1078,12 @@
   // DOM input by id-prefix to overwrite the user's bogus number, and
   // (b) build a human label for the toast.
   const _COL_TO_PREFIX = { pv_kwp: "pv", bess_kwh: "bess", ev_kwh: "ev" };
+  // Phase O-fix-9: pv_kwp now has a real range ("1–25") so the toast
+  // template fires instead of falling back to "was out of range". The
+  // label "PV size" matches the step3 hint copy ("Range 1–25 kW.
+  // Typical 5 kW") so participants see consistent wording.
   const _COL_TO_LABEL = {
-    pv_kwp:   { name: "PV capacity",      unit: "kW",       range: "" },
+    pv_kwp:   { name: "PV size",          unit: "kW",       range: "1–25" },
     bess_kwh: { name: "Battery capacity", unit: "kWh",      range: "2–50" },
     ev_kwh:   { name: "EV daily charge",  unit: "kWh/day",  range: "2–24" },
   };

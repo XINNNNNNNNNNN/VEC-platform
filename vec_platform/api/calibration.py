@@ -75,6 +75,11 @@ _CASCADE_SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
 _FIELD_BOUNDS = {
     "bess_kwh": (config.BESS_MIN_KWH, config.BESS_MAX_KWH, config.BESS_DEFAULT_KWH),
     "ev_kwh":   (config.EV_MIN_DAILY_KWH, config.EV_MAX_DAILY_KWH, config.EV_DEFAULT_DAILY_KWH),
+    # Phase O-fix-9: pv_kwp parallels the BESS/EV validation. 0 kWp with
+    # has_pv=True is a UI contradiction (says "I have panels" but their
+    # production is zero) — snap to PV_DEFAULT_KWP so the live bill
+    # and the input box agree.
+    "pv_kwp":   (config.PV_MIN_KWP, config.PV_MAX_KWP, config.PV_DEFAULT_KWP),
 }
 
 

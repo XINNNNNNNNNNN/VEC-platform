@@ -108,15 +108,23 @@
             <div class="calibration-section" id="der-capacity-section">
               <div class="calibration-label">My system size</div>
 
+              <!-- Phase O-fix-9: pv_kwp gains the same range validation
+                   as bess_kwh / ev_kwh. min=1 max=25 mirrors the
+                   PV_MIN_KWP / PV_MAX_KWP config constants; the
+                   backend snaps OOR values back to PV_DEFAULT_KWP=5
+                   and the JS toast surfaces the auto-correct. -->
               <div class="capacity-row" id="pv-capacity-row" style="display: none;">
                 <label class="capacity-label" for="pv-capacity-input">PV (solar)</label>
                 <input type="number" class="capacity-input" id="pv-capacity-input"
-                       value="5" step="0.5" min="0" disabled>
+                       value="5" step="0.5" min="1" max="25" disabled>
                 <span class="capacity-unit">kW</span>
                 <label class="capacity-unknown">
                   <input type="checkbox" id="pv-capacity-unknown" checked>
                   I don't know
                 </label>
+                <small class="text-muted d-block ms-1" style="font-size: 0.75rem;">
+                  Range 1-25 kW. Typical 5 kW (~25 m² roof panels).
+                </small>
               </div>
 
               <!-- Phase O-fix-6: BESS is a 4C battery — duration
