@@ -458,9 +458,6 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
     State("step7-entry-threshold-pct", "value"),
     State("step7-exit-threshold", "value"),
     State("step7-final-willingness", "value"),
-    State("step7-expert-q1-realism", "value"),
-    State("step7-expert-q2-barrier", "value"),
-    State("step7-expert-q3-comment", "value"),
     State("step7-demo-age", "value"),
     State("step7-demo-gender", "value"),
     State("step7-demo-country", "value"),
@@ -471,15 +468,14 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
 def submit_survey(n_clicks, q1, q3, q4,
                   q5, q6, q7,
                   entry_pct, exit_t, final_w,
-                  eq1, eq2, eq3,
                   age, gender, country,
                   drivers,
                   search):
     """v3.9: writes survey_responses (upsert) + exit_thresholds (upsert) +
     willingness_measurements(round=3) + flips sessions.completed=True.
 
-    Expert states (eq1/eq2/eq3) come back as None when the expert block
-    isn't rendered (suppress_callback_exceptions=True is set globally).
+    Phase Q-1b: expert block (eq1/eq2/eq3) removed — all participants
+    answer the same questions.
 
     v3.X-fix-7 added drivers_top3 (E.ON Q13). v3.X-fix-8 merged the
     legacy Q2_reasons question into drivers_top3 (same semantic — "top
@@ -526,9 +522,6 @@ def submit_survey(n_clicks, q1, q3, q4,
         row.q5_trust_source = q5
         row.q6_fairness_pref = q6
         row.q7_transparency_pref = q7
-        row.expert_q1_realism = eq1  # None for non-experts, schema is nullable
-        row.expert_q2_barrier = eq2
-        row.expert_q3_comment = (eq3 or None) or None  # treat empty string as None
         row.demo_age_range = age
         row.demo_gender = gender
         row.demo_country = country or "SE"
