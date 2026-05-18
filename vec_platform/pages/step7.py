@@ -176,36 +176,36 @@ def _survey_form(session_id: str) -> html.Div:
         # drivers_top3 below, so this block is now Q1 / Q2 (concerns) /
         # Q3 (savings perception). The "top reasons" question lives in
         # the drivers_top3 card further down.) -----
-        html.H5("Q1 · How likely are you to actually join a VEC like this?"),
+        html.H5("S7-Q1 · How likely are you to actually join a VEC like this?"),
         dbc.RadioItems(id="survey-q1", options=_Q1_OPTIONS, value=None, className="mb-4"),
 
-        html.H5("Q2 · What would worry you the most? (pick up to 3)"),
+        html.H5("S7-Q2 · What would worry you the most? (pick up to 3)"),
         dbc.Checklist(id="survey-q3", options=_Q3_OPTIONS, value=[], className="mb-4"),
 
-        html.H5("Q3 · Looking at the savings you saw in Step 5…"),
+        html.H5("S7-Q3 · Looking at the savings you saw in Step 5…"),
         dbc.RadioItems(id="survey-q4", options=_Q4_OPTIONS, value=None, className="mb-3"),
 
         # ----- Q5 / Q6 / Q7 (v3.9) -----
         html.Hr(),
         _radio_card(
-            "If a VEC service were available where you live, who would "
+            "S7-Q4 · If a VEC service were available where you live, who would "
             "you most trust to manage it?",
             "step7-q5-trust-source", _Q5_OPTIONS,
         ),
         _radio_card(
-            "If everyone in the VEC contributes differently (some have "
+            "S7-Q5 · If everyone in the VEC contributes differently (some have "
             "solar, some don't), how should the savings be split?",
             "step7-q6-fairness", _Q6_OPTIONS,
         ),
         _radio_card(
-            "How much information would you want about the VEC's operation?",
+            "S7-Q6 · How much information would you want about the VEC's operation?",
             "step7-q7-transparency", _Q7_OPTIONS,
         ),
 
         # ----- entry threshold slider -----
         dbc.Card(dbc.CardBody([
             html.H4(
-                "Before joining, what minimum % of monthly bill savings "
+                "S7-Q7 · Before joining, what minimum % of monthly bill savings "
                 "would you require to consider joining a VEC at all?"
             ),
             dcc.Slider(
@@ -223,7 +223,7 @@ def _survey_form(session_id: str) -> html.Div:
 
         # ----- exit threshold -----
         _radio_card(
-            "Imagine you joined a VEC and during the first months your "
+            "S7-Q9 · Imagine you joined a VEC and during the first months your "
             "actual savings turn out to be lower than what you originally "
             "expected. At what point would you consider leaving?",
             "step7-exit-threshold", _EXIT_OPTIONS,
@@ -241,7 +241,7 @@ def _survey_form(session_id: str) -> html.Div:
         html.Hr(),
         dbc.Card(dbc.CardBody([
             html.H4(
-                f"What would be your top reasons to join a VEC like "
+                f"S7-Q12 · What would be your top reasons to join a VEC like "
                 f"this? (pick up to {_DRIVERS_MAX})"
             ),
             dcc.Checklist(
@@ -254,7 +254,7 @@ def _survey_form(session_id: str) -> html.Div:
         ]), className="mb-3"),
 
         # ----- demographics -----
-        html.H3("A few questions about you", className="mt-4 mb-3"),
+        html.H3("S7-Q13 · A few questions about you", className="mt-4 mb-3"),
         dbc.Card(dbc.CardBody([
             html.H4("Age range"),
             dcc.RadioItems(
