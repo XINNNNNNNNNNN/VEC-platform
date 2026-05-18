@@ -41,12 +41,6 @@ class Session(Base):
     info_calibration_arm: Mapped[str] = mapped_column(
         String(1), default="C", server_default="C", nullable=False,
     )
-    # 'expert' vs 'general' — Phase 3.1 derives this from a Step 1 occupation
-    # question. Until then everyone is 'general'.
-    expertise: Mapped[str] = mapped_column(
-        String(16), default="general", server_default="general", nullable=False,
-    )
-
     # v3.X-fix-7 — E.ON Q9 alignment. 5-point self-rated familiarity with
     # the VEC concept, asked at Step 0 *before* the first prior-expectation
     # slider so it serves as a baseline covariate for the info-calibration
