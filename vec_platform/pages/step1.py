@@ -23,12 +23,6 @@ import dash_bootstrap_components as dbc
 from vec_platform import config
 from vec_platform.runtime import dash_app, SessionLocal, calculation_engine
 from vec_platform.pages._helpers import _parse_session_id
-# Phase 3.X-fix-10: share the same vec_familiarity threshold step8 uses to
-# gate the expert block, so the "are you in the high-familiarity subset?"
-# decision lives in exactly one place. step1 hides Q5 (occupation) when
-# the user is *below* the gate; step8 shows the expert block when the
-# user is *at or above* the gate. Both must pivot on identical values.
-from vec_platform.pages.step7 import _EXPERT_FAMILIARITY_GATE
 
 
 # ==================== Step 1 ====================
@@ -81,14 +75,6 @@ def step1_layout(session_id: str | None = None):
                   color="warning", className="py-2 small")
     )
 
-    # Phase 3.X-fix-10: Q5 (occupation / "energy professional?") is only
-    # asked of participants whose Step 0 vec_familiarity is in the top 2
-    # of the 5-pt scale. Users below the gate are extremely unlikely to
-    # be energy professionals, so the question is information-redundant
-    # for them — and hiding it removes a small surface for the demand
-    # effect. The high-familiarity subset is still asked, preserving the
-    # backward-compat comparison with the legacy expertise self-label.
-    show_occupation = False
     # Phase F: if the participant is editing Step 1 after having
     # generated any downstream data (customize / respond / survey
     # rows), warn them up-front that pressing Next will wipe that
@@ -106,7 +92,6 @@ def step1_layout(session_id: str | None = None):
         db = SessionLocal()
         try:
             sess = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-            vec_fam = sess.vec_familiarity if sess else None
             has_downstream = (
                 db.query(DailyProfile)
                 .filter(
@@ -120,20 +105,15 @@ def step1_layout(session_id: str | None = None):
             )
         finally:
             db.close()
-        show_occupation = vec_fam in _EXPERT_FAMILIARITY_GATE
 
-    # Phase 3.X-fix-14: the Q5 block is *always* rendered into the DOM,
-    # but the wrapper html.Div is CSS-hidden (display:none) for the
-    # low-familiarity subset. Earlier (fix-10) the block was conditionally
-    # appended; that caused submit_step1's State("occupation", "value")
-    # to reference a missing component and Dash strict-mode raised a
-    # ReferenceError, leaving Step 1 stuck on Next for low-familiarity
-    # sessions. Always-in-DOM + CSS visibility keeps the callback graph
-    # valid; fix-13's 'general_public' default value means the hidden
-    # widget reports a truthy value to submit_step1 so validation passes.
+    # Phase Q-1c: Q5 (occupation) is shown to all participants. Earlier
+    # phases (3.X-fix-10..15) gated this question on vec_familiarity;
+    # v3 removes that gate — occupation is one input to the post-hoc
+    # composite_expertise_z = z(occupation self-report) + z(quiz_score),
+    # so it must be asked of everyone for the RQ7 contrast to work.
     occupation_block = html.Div(
         [
-            # Q5: Occupation (drives sessions.expertise; rephrased as a
+            # Q5: Occupation (asked to all participants; rephrased as a
             # yes/no question post fix-11 with the scope description in
             # a subtitle).
             html.H5("Q5 · Are you an energy-related researcher or professional?"),
@@ -145,26 +125,16 @@ def step1_layout(session_id: str | None = None):
             dbc.RadioItems(
                 id="occupation",
                 options=_OCCUPATION_OPTIONS,
-                # Phase 3.X-fix-15: no default value — high-familiarity
-                # participants must actively pick Yes/No so the answer
-                # carries real intent (a default would silently classify
-                # passive participants and pollute the data semantic).
-                # Low-familiarity participants don't see Q5 at all
-                # (fix-14 hides the wrapper Div with display:none) and
-                # their occupation State arrives at submit as None;
-                # submit_step1's fix-10 conditional-required check skips
-                # that validation when vec_familiarity is below the gate,
-                # so None-occupation low-fam users still pass Next.
+                # No default value: participants must actively pick
+                # Yes/No so the answer carries real intent. A default
+                # would silently classify passive participants and
+                # pollute the data semantic.
                 value=None,
                 className="mb-2",
             ),
-            # Phase O-fix-10: per-Q hint div for the occupation question.
-            # Lives inside the occupation_block so it disappears with
-            # the rest of Q5 when the block is CSS-hidden for low
-            # vec_familiarity participants.
+            # Per-Q hint div for the occupation question.
             html.Div(id="q5-hint", className="step1-hint-text mb-3"),
         ],
-        style={} if show_occupation else {"display": "none"},
     )
 
     # Phase F: warn the participant before they overwrite progress
@@ -289,8 +259,7 @@ def step1_layout(session_id: str | None = None):
 #   - update_next_visual (drives the Next button's className gray/blue)
 #   - submit_step1       (populates per-Q hint divs on submit click)
 # Keeping the predicate in one place stops the two callbacks drifting.
-def _validate_step1(building_type, area, people, occupation,
-                    occupation_required):
+def _validate_step1(building_type, area, people, occupation):
     """Return {hint_div_id: message} for invalid answers.
 
     ``der_options`` (Q2) is intentionally *not* validated — a household
@@ -343,37 +312,11 @@ def _validate_step1(building_type, area, people, occupation,
                     f"(you entered {int(p) if p.is_integer() else p:g})."
                 )
 
-    # Q5 only when the participant's vec_familiarity places them in
-    # the expert gate. Low-fam users don't see the question; we must
-    # not flag them as failing it.
-    if occupation_required and not occupation:
+    # Q5 occupation: required for all participants (Phase Q-1c).
+    if not occupation:
         hints["q5-hint"] = "⚠ Please answer this question."
 
     return hints
-
-
-def _occupation_required(session_id):
-    """Lookup-helper: does this session require the Q5 answer?
-
-    Mirrors the gate used by step1_layout's `show_occupation` so the
-    visual rendering and the validation pivot on identical state.
-    """
-    if not session_id:
-        return False
-    from vec_platform.models import Session as SessionModel
-    _db = SessionLocal()
-    try:
-        _sess = (
-            _db.query(SessionModel)
-            .filter(SessionModel.id == session_id)
-            .first()
-        )
-        return (
-            _sess is not None
-            and _sess.vec_familiarity in _EXPERT_FAMILIARITY_GATE
-        )
-    finally:
-        _db.close()
 
 
 # ==================== Step 1 Next-button visual callback ============
@@ -401,10 +344,7 @@ def _occupation_required(session_id):
     Input("url", "search"),
 )
 def update_next_visual(building_type, area, people, occupation, search):
-    session_id = _parse_session_id(search)
-    occ_required = _occupation_required(session_id)
-    hints = _validate_step1(building_type, area, people, occupation,
-                            occ_required)
+    hints = _validate_step1(building_type, area, people, occupation)
     if hints:
         return "mt-2 disabled-look"
     return "mt-2"
@@ -493,9 +433,7 @@ def submit_step1(n_clicks, building_type, der_options, area, people,
     # update_next_visual uses, so visual disable-look and submit-time
     # rejection are guaranteed to agree.
     session_id = _parse_session_id(search)
-    occ_required = _occupation_required(session_id)
-    hints = _validate_step1(building_type, area, people, occupation,
-                            occ_required)
+    hints = _validate_step1(building_type, area, people, occupation)
     if hints:
         return (
             no_update, no_update,
@@ -514,15 +452,6 @@ def submit_step1(n_clicks, building_type, der_options, area, people,
     has_pv = "pv" in der
     has_bess = "bess" in der
     has_ev = "ev" in der
-    # fix-10: derive expertise only when occupation was actually asked.
-    # When the question was hidden (low vec_familiarity), expertise stays
-    # NULL on the session row to mirror the "not asked" data semantics.
-    if occupation == "energy_professional":
-        expertise = "expert"
-    elif occupation == "general_public":
-        expertise = "general"
-    else:
-        expertise = None  # widget hidden or never answered
 
     # Phase E: upsert pattern. Pressing Back and resubmitting Step 1
     # used to produce a fresh row in user_inputs + daily_profiles
@@ -558,14 +487,6 @@ def submit_step1(n_clicks, building_type, der_options, area, people,
             session = SessionModel(id=session_id, current_step=1)
             db.add(session)
             db.flush()
-
-        # v3: drives Step 8's expert-only follow-ups (fix-9 actually moved
-        # that gate to vec_familiarity; expertise stays for backward-
-        # compat analysis).
-        if expertise is not None:
-            session.expertise = expertise
-        # else: leave existing value (None for fresh sessions; whatever
-        # was there for a re-submit). Don't overwrite with None.
 
         # Phase F: detect downstream data left over from an earlier
         # walk-through. "Downstream" = anything produced after the
