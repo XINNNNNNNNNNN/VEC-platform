@@ -124,18 +124,6 @@ _COUNTRY_OPTIONS = [
     {"label": "Other",  "value": "OTHER"},
 ]
 
-# Phase 3.X-fix-9: expert block now gated by vec_familiarity (top 2 of
-# the 5-pt scale: 'very_familiar' or 'have_participated'). Replaces the
-# Phase 3.9 / fix-3.9 gate of `expertise == 'expert'`, which was a Step 1
-# occupation self-label. Self-labelling has low validity and risks demand
-# effect (people who tick "energy professional" may answer differently
-# *because* of the label); a prior-knowledge proxy from Step 0's
-# familiarity slider is methodologically cleaner.
-#
-# Backward compat: sessions.expertise + user_inputs.occupation columns
-# (and the Step 1 occupation question) are intentionally preserved.
-# Analyses can compare self-label vs. familiarity-gate definitions.
-_EXPERT_FAMILIARITY_GATE = {"very_familiar", "have_participated"}
 
 
 # v3.X-fix-7 / fix-8 — E.ON Q13 alignment + merged legacy Q2_reasons.
@@ -174,18 +162,14 @@ def _radio_card(question: str, radio_id: str, options: list) -> dbc.Card:
 
 
 def _survey_form(session_id: str) -> html.Div:
-    """Full survey form. Phase Q-1b: all participants see the same
-    questions — the v3.X-fix-9 ``is_expert`` branching and the
-    accompanying expert block (3 questions on realism / barrier /
-    free-text comment) have been removed. RQ7 expert-vs-lay analysis
+    """Full survey form. All participants see the same questions —
+    Q-1b removed the v3.X-fix-9 expert block (3 questions on realism
+    / barrier / free-text comment); Q-1c removed the
+    _EXPERT_FAMILIARITY_GATE constant and the corresponding
+    occupation-question gating in step1.py. RQ7 expert-vs-lay analysis
     is now fully post-hoc, using composite_expertise_z =
     z(occupation self-report) + z(quiz_score) computed from existing
-    items.
-
-    Note: _EXPERT_FAMILIARITY_GATE constant is retained at module
-    level because step1.py still imports it for the occupation
-    question's conditional rendering. That gating is removed in
-    Phase Q-1c."""
+    items."""
 
     return html.Div(id="step7-form", children=[
         # ----- Q1-Q3 baseline (v3.X-fix-8: original Q2 was merged into
