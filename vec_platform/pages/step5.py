@@ -329,7 +329,7 @@ def step5_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "Looking at how much the three options would actually save "
+                    "S5-Q1 · Looking at how much the three options would actually save "
                     "you, how does this compare to what you expected before "
                     "seeing your own profile?"
                 ),
@@ -351,7 +351,7 @@ def step5_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "Now that you've seen the comparison, would you consider "
+                    "S5-Q3 · Now that you've seen the comparison, would you consider "
                     "joining a VEC?"
                 ),
                 dcc.RadioItems(
