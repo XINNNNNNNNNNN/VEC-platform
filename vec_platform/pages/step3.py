@@ -269,7 +269,7 @@ def step3_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "Looking at this VEC price pattern, would you consider "
+                    "S3-Q1 · Looking at this VEC price pattern, would you consider "
                     "shifting your electricity use to cheaper hours?"
                 ),
                 dcc.RadioItems(
@@ -288,7 +288,7 @@ def step3_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "If a VEC offered to automatically schedule some of your "
+                    "S3-Q2 · If a VEC offered to automatically schedule some of your "
                     "devices (e.g., washing machine, EV charging) to get the "
                     "best prices, would you prefer:"
                 ),
