@@ -168,8 +168,10 @@ def _survey_form(session_id: str) -> html.Div:
     _EXPERT_FAMILIARITY_GATE constant and the corresponding
     occupation-question gating in step1.py. RQ7 expert-vs-lay analysis
     is now fully post-hoc, using composite_expertise_z =
-    z(occupation self-report) + z(quiz_score) computed from existing
-    items."""
+    z(vec_familiarity) + z(occupation) computed from existing
+    items. (Phase Q-1d-revised cancelled the originally-planned quiz
+    component; expertise is now defined from these two self-report
+    signals only.)"""
 
     return html.Div(id="step7-form", children=[
         # ----- Q1-Q3 baseline (v3.X-fix-8: original Q2 was merged into

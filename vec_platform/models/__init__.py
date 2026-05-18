@@ -351,7 +351,7 @@ class SurveyResponse(Base):
     # country defaults at submit time. (Phase Q-1b: removed the expert
     # block entirely — all participants answer the same questions; RQ7
     # expert-vs-lay analysis is computed post-hoc from
-    # composite_expertise_z = z(occupation self-report) + z(quiz_score).)
+    # composite_expertise_z = z(vec_familiarity) + z(occupation).)
     q5_trust_source: Mapped[Optional[str]] = mapped_column(
         String(32), nullable=True,
     )  # 'government' / 'utility' / 'coop' / 'tech' / 'none'

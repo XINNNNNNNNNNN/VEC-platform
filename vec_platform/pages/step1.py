@@ -109,7 +109,7 @@ def step1_layout(session_id: str | None = None):
     # Phase Q-1c: Q5 (occupation) is shown to all participants. Earlier
     # phases (3.X-fix-10..15) gated this question on vec_familiarity;
     # v3 removes that gate — occupation is one input to the post-hoc
-    # composite_expertise_z = z(occupation self-report) + z(quiz_score),
+    # composite_expertise_z = z(vec_familiarity) + z(occupation),
     # so it must be asked of everyone for the RQ7 contrast to work.
     occupation_block = html.Div(
         [
