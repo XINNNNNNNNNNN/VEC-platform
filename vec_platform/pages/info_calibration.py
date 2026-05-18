@@ -180,7 +180,7 @@ def info_calibration_layout(session_id: str | None = None):
         # Interest question.
         html.Div([
             html.Label(
-                "Based on what you've read, how interested would you be "
+                "IC-Q1 · Based on what you've read, how interested would you be "
                 "in joining a VEC?",
                 className="form-label fw-bold mb-3 mt-3",
             ),
