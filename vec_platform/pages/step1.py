@@ -116,7 +116,7 @@ def step1_layout(session_id: str | None = None):
             # Q5: Occupation (asked to all participants; rephrased as a
             # yes/no question post fix-11 with the scope description in
             # a subtitle).
-            html.H5("Q5 · Are you an energy-related researcher or professional?"),
+            html.H5("S1-Q5 · Are you an energy-related researcher or professional?"),
             html.P(
                 "(works/studies in energy industry, utilities, energy "
                 "research, or energy policy)",
@@ -166,7 +166,7 @@ def step1_layout(session_id: str | None = None):
                 # Q1: Building type (Phase O — 4-way replacing the
                 # legacy 2-way ownership_type radio). Mirrors the
                 # E.ON Sweden consumer survey 2025 categories.
-                html.H5("Q1 · What kind of home do you live in?"),
+                html.H5("S1-Q1 · What kind of home do you live in?"),
                 dbc.RadioItems(
                     id="building-type",
                     options=_BUILDING_TYPE_OPTIONS,
@@ -181,7 +181,7 @@ def step1_layout(session_id: str | None = None):
                 html.Div(id="q1-hint", className="step1-hint-text mb-4"),
 
                 # Q2: DER (multi-select, may be empty)
-                html.H5("Q2 · Which of these do you have at home? "
+                html.H5("S1-Q2 · Which of these do you have at home? "
                         "(select all that apply)"),
                 dbc.Checklist(
                     id="der-options",
@@ -195,7 +195,7 @@ def step1_layout(session_id: str | None = None):
                 # the high end. Range shown inline so participants know
                 # the supported window before submitting.)
                 html.H5(
-                    f"Q3 · Approximate floor area of your home "
+                    f"S1-Q3 · Approximate floor area of your home "
                     f"({int(config.AREA_MIN_M2)}–{int(config.AREA_MAX_M2)} m²)"
                 ),
                 dbc.Row([
@@ -213,7 +213,7 @@ def step1_layout(session_id: str | None = None):
                 # Q4: People (Phase O-fix-10: 1-10 covers single-person
                 # households up to multi-generation extended families.)
                 html.H5(
-                    f"Q4 · Number of people living in your home "
+                    f"S1-Q4 · Number of people living in your home "
                     f"({config.PEOPLE_MIN}–{config.PEOPLE_MAX})"
                 ),
                 dbc.Row([
