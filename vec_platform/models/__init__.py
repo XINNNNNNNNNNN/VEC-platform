@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, Float, Integer, DateTime, ForeignKey, Text
+from sqlalchemy import String, Boolean, Float, Integer, DateTime, ForeignKey, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.sqlite import JSON
 
@@ -41,6 +41,18 @@ class Session(Base):
     info_calibration_arm: Mapped[str] = mapped_column(
         String(1), default="C", server_default="C", nullable=False,
     )
+
+    # Phase Q-2a: S0-NOTE cheap-talk acknowledgement. Set to True
+    # when the participant clicks "I understand — continue" on the
+    # Welcome state_3 preface page. NOT NULL with server_default
+    # false so every session row has a deterministic value; the
+    # state_3 submit handler flips it to True before navigating to
+    # /dash/step1. Murphy et al. 2005: cheap-talk reduces hypothetical
+    # bias ~35%.
+    cheap_talk_acknowledged: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False,
+    )
+
     # v3.X-fix-7 — E.ON Q9 alignment. 5-point self-rated familiarity with
     # the VEC concept, asked at Step 0 *before* the first prior-expectation
     # slider so it serves as a baseline covariate for the info-calibration
@@ -168,6 +180,15 @@ class UserInput(Base):
     # 0.0 – 50.0, NULL on rows that pre-date the migration.
     entry_threshold_pct: Mapped[Optional[float]] = mapped_column(
         Float, nullable=True,
+    )
+
+    # Phase Q-2a: S0-Q3 Decision Confidence (1-5 Likert) captured
+    # immediately after S0-Q2 entry-threshold slider on the Welcome
+    # page state_2. Pairs with S7-Q8 (final decision confidence) for
+    # the pre/post-information confidence-change analysis. Nullable
+    # because pre-Q-2a sessions have no answer.
+    entry_threshold_decision_confidence: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
     )
 
     # Relationship
