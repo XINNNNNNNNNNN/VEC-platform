@@ -285,7 +285,7 @@ def step6_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "Now that you've seen how VECs affect policy, the grid, "
+                    "S6-Q1 · Now that you've seen how VECs affect policy, the grid, "
                     "and the environment, has this changed your view about "
                     "joining one?"
                 ),
