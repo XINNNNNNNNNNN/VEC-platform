@@ -86,6 +86,21 @@ _VEC_FAMILIARITY_OPTIONS = [
     {"label": "Have participated in a similar initiative",      "value": "have_participated"},
 ]
 
+# Phase Q-2a: S0-Q3 Decision Confidence anchors. 5-Likert measuring
+# how sure the participant is about their S0-Q2 threshold answer.
+# Note: this is DECISION confidence (will I act this way?), distinct
+# from S2-Q2 ESTIMATE-accuracy confidence (is my percentage correct?).
+# Both use the same Likert anchors by design — anchor form is
+# preserved across the v3 confidence battery for cross-question
+# comparison, but the SEMANTIC of the question wording differs.
+_DECISION_CONFIDENCE_OPTIONS = [
+    {"label": "1 — Very unsure", "value": 1},
+    {"label": "2 — Somewhat unsure", "value": 2},
+    {"label": "3 — Moderately sure", "value": 3},
+    {"label": "4 — Quite sure", "value": 4},
+    {"label": "5 — Very sure", "value": 5},
+]
+
 _SLIDER_MARKS = {p: f"{p}%" for p in (0, 10, 20, 30, 40, 50)}
 
 # Phase O-fix-11: shared className constants so the visual rules can't
@@ -326,6 +341,26 @@ def step0_layout(session_id: str | None = None):
                      className="step1-hint-text"),
         ], className="mb-4"),
 
+        # S0-Q3 Decision Confidence — measures how sure the
+        # participant is about their threshold answer above. Distinct
+        # from S2-Q2 estimate-accuracy confidence; pairs with S7-Q8
+        # for pre/post-information confidence change analysis.
+        html.Div([
+            html.Label(
+                "S0-Q3 · How sure are you that you'd actually act "
+                "this way (join a VEC only above this threshold)?",
+                className="form-label fw-bold mb-2 mt-3",
+            ),
+            dcc.RadioItems(
+                id="welcome-confidence-radio",
+                options=_DECISION_CONFIDENCE_OPTIONS,
+                value=None,
+                labelStyle={"display": "block", "padding": "0.2rem 0"},
+            ),
+            html.Div(id="welcome-confidence-hint",
+                     className="step1-hint-text"),
+        ], className="mb-4"),
+
         dbc.Button(
             "Next",
             id="welcome-state2-next",
@@ -344,7 +379,39 @@ def step0_layout(session_id: str | None = None):
 
     ], id="welcome-state-2", style={"display": "none"})
 
-    return html.Div([state_1, state_2])
+    # ---- State 3: cheap-talk preface (Phase Q-2a) ----
+    # Single static-text page between state_2 and /dash/step1.
+    # Acknowledgement-only — clicking "I understand — continue" flips
+    # sessions.cheap_talk_acknowledged=True and navigates. Murphy
+    # et al. 2005: cheap-talk preface reduces hypothetical bias ~35%
+    # by signalling to participants that they should answer as if
+    # their choice has real consequences, not as if it's a survey.
+    state_3 = html.Div([
+        html.H2("Before we continue, a quick note", className="mb-3"),
+        html.P(
+            "Over the next 25 minutes, we'll ask what you would do "
+            "in a Virtual Energy Community. We're not looking for "
+            "answers that sound good, or for what other people "
+            "might say. We want to know what YOU would actually do.",
+            className="mb-3",
+        ),
+        html.P(
+            "Many people are tempted to say they would join, save "
+            "energy, or change their habits — but in practice, they "
+            "don't. Please answer as if your choices today actually "
+            "decide whether VECs get built in Sweden.",
+            className="mb-4",
+        ),
+        dbc.Button(
+            "I understand — continue",
+            id="welcome-state3-next",
+            color="primary",
+            size="lg",
+            n_clicks=0,
+        ),
+    ], id="welcome-state-3", style={"display": "none"})
+
+    return html.Div([state_1, state_2, state_3])
 
 
 # ===================== Callbacks =====================
@@ -427,11 +494,13 @@ def welcome_track_threshold(value):
     Output("welcome-state2-next", "className"),
     Input("welcome-familiarity-radio", "value"),
     Input("welcome-threshold-touched-store", "data"),
+    Input("welcome-confidence-radio", "value"),
 )
-def welcome_state2_next_visual(familiarity, touched):
-    """Both familiarity radio and slider-touched must be true for
-    the Next button to leave disabled-look."""
-    if familiarity and touched:
+def welcome_state2_next_visual(familiarity, touched, confidence):
+    """Phase Q-2a: all three S0 questions must be answered for Next
+    to leave disabled-look. familiarity = S0-Q1, touched = S0-Q2
+    slider has been moved at least once, confidence = S0-Q3."""
+    if familiarity and touched and confidence:
         return _CLS_BTN_ENABLED
     return _CLS_BTN_DISABLED
 
@@ -464,19 +533,32 @@ def _welcome_clear_threshold_hint(_value):
 
 
 @dash_app.callback(
+    Output("welcome-confidence-hint", "children", allow_duplicate=True),
+    Input("welcome-confidence-radio", "value"),
+    prevent_initial_call=True,
+)
+def _welcome_clear_confidence_hint(_value):
+    """Phase Q-2a: mirror of the familiarity/threshold clear pattern
+    for the new S0-Q3 confidence radio."""
+    return ""
+
+
+@dash_app.callback(
     Output("welcome-familiarity-hint", "children"),
     Output("welcome-threshold-hint", "children"),
-    Output("url", "pathname"),
-    Output("url", "search"),
+    Output("welcome-confidence-hint", "children"),
+    Output("welcome-state-2", "style"),
+    Output("welcome-state-3", "style"),
     Input("welcome-state2-next", "n_clicks"),
     State("welcome-familiarity-radio", "value"),
     State("welcome-threshold-slider", "value"),
     State("welcome-threshold-touched-store", "data"),
+    State("welcome-confidence-radio", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
 def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
-                          search):
+                          confidence, search):
     """Validate familiarity + threshold-touched, then write to DB and
     navigate to /step1.
 
@@ -494,16 +576,19 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
     # restore, etc.) where the callback would otherwise see n_clicks=0
     # and run validation before the participant ever clicked Next.
     if not n_clicks:
-        return no_update, no_update, no_update, no_update
+        return (no_update, no_update, no_update, no_update, no_update)
 
     fam_hint = ""
     thr_hint = ""
+    conf_hint = ""
     if not familiarity:
         fam_hint = "⚠ Please select an option."
     if not touched:
         thr_hint = "⚠ Please move the slider to set your threshold."
-    if fam_hint or thr_hint:
-        return fam_hint, thr_hint, no_update, no_update
+    if not confidence:
+        conf_hint = "⚠ Please select how sure you are."
+    if fam_hint or thr_hint or conf_hint:
+        return (fam_hint, thr_hint, conf_hint, no_update, no_update)
 
     session_id = _parse_session_id(search)
     if not session_id:
@@ -512,7 +597,7 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
         # "page-level" error placeholder on the Welcome layout.
         return (
             "⚠ Session id missing — please start from '/'.",
-            "",
+            "", "",
             no_update, no_update,
         )
 
@@ -528,7 +613,7 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
         if sess is None:
             return (
                 "⚠ Session not found — please start from '/'.",
-                "",
+                "", "",
                 no_update, no_update,
             )
 
@@ -538,9 +623,9 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
         if sess.current_step is None or sess.current_step < 1:
             sess.current_step = 1
 
-        # Upsert user_inputs.entry_threshold_pct. Step 1 will later see
-        # this row and update its own fields (building_type, area, …)
-        # without disturbing entry_threshold_pct.
+        # Upsert user_inputs.entry_threshold_pct + entry_threshold_decision_confidence.
+        # Step 1 will later see this row and update its own fields
+        # (building_type, area, ...) without disturbing these.
         ui = (
             db.query(UserInput)
             .filter(UserInput.session_id == session_id)
@@ -550,9 +635,57 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
             ui = UserInput(session_id=session_id)
             db.add(ui)
         ui.entry_threshold_pct = float(threshold_pct)
+        ui.entry_threshold_decision_confidence = int(confidence)
 
         db.commit()
     finally:
         db.close()
 
-    return "", "", "/dash/step1", f"?session_id={session_id}"
+    # Phase Q-2a: instead of navigating directly to /dash/step1, reveal
+    # state_3 (cheap-talk preface). The actual navigation happens in
+    # welcome_state3_submit after the participant acknowledges.
+    return ("", "", "",
+            {"display": "none"}, {})
+
+
+# ===================== Phase Q-2a: state_3 cheap-talk =====================
+
+@dash_app.callback(
+    Output("url", "pathname"),
+    Output("url", "search"),
+    Input("welcome-state3-next", "n_clicks"),
+    State("url", "search"),
+    prevent_initial_call=True,
+)
+def welcome_state3_submit(n_clicks, search):
+    """Phase Q-2a: state_3 acknowledgement handler. Flips
+    sessions.cheap_talk_acknowledged=True and navigates to
+    /dash/step1. The state_3 page itself has no validation — the
+    button click is the entire signal."""
+    if not n_clicks:
+        return no_update, no_update
+
+    session_id = _parse_session_id(search)
+    if not session_id:
+        # Defensive — should never happen in normal flow because
+        # state_3 is only reachable via state_2 submit.
+        return no_update, no_update
+
+    from vec_platform.models import Session as SessionModel
+
+    db = SessionLocal()
+    try:
+        sess = (
+            db.query(SessionModel)
+            .filter(SessionModel.id == session_id)
+            .first()
+        )
+        if sess is None:
+            return no_update, no_update
+
+        sess.cheap_talk_acknowledged = True
+        db.commit()
+    finally:
+        db.close()
+
+    return "/dash/step1", f"?session_id={session_id}"
