@@ -369,10 +369,12 @@ class SurveyResponse(Base):
     )
 
     # v3.9 — final-survey expansion (Step 7 in the Phase 4-A 7-step
-    # flow, formerly Step 8): 3 new survey questions + 3 expert-only
-    # questions + 3 demographics fields. All nullable: experts get the
-    # expert_* trio asked, non-experts leave them NULL; demographics are
-    # asked of everyone but country defaults at submit time.
+    # flow, formerly Step 8): 3 new survey questions + 3 demographics
+    # fields. All nullable: demographics are asked of everyone but
+    # country defaults at submit time. (Phase Q-1b: removed the expert
+    # block entirely — all participants answer the same questions; RQ7
+    # expert-vs-lay analysis is computed post-hoc from
+    # composite_expertise_z = z(occupation self-report) + z(quiz_score).)
     q5_trust_source: Mapped[Optional[str]] = mapped_column(
         String(32), nullable=True,
     )  # 'government' / 'utility' / 'coop' / 'tech' / 'none'
@@ -382,15 +384,6 @@ class SurveyResponse(Base):
     q7_transparency_pref: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'minimal' / 'summary' / 'detailed' / 'full'
-    expert_q1_realism: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True,
-    )  # 1..5 (very unrealistic .. very realistic)
-    expert_q2_barrier: Mapped[Optional[str]] = mapped_column(
-        String(32), nullable=True,
-    )  # 'regulatory' / 'awareness' / 'tech' / 'incentives' / 'biz_model'
-    expert_q3_comment: Mapped[Optional[str]] = mapped_column(
-        String(256), nullable=True,
-    )  # free-form, max 200 chars enforced client-side
     demo_age_range: Mapped[Optional[str]] = mapped_column(
         String(8), nullable=True,
     )  # '18-29' / '30-39' / '40-49' / '50-59' / '60-69' / '70+'
