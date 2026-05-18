@@ -176,6 +176,23 @@ class UserInput(Base):
         Float, nullable=True,
     )
 
+    # Phase Q-1a: VEC questionnaire v3 S1-Q6 — 5-item objective
+    # knowledge quiz. Each quiz_qN column holds per-item correctness
+    # (1 = correct, 0 = incorrect or "don't know"); quiz_score holds
+    # the 0..5 sum, written by the /dash/quiz submit handler (added
+    # in Phase Q-1d). All six are nullable so transient rows that
+    # haven't reached the quiz page yet (Welcome -> Step1 path from
+    # Phase O-fix-11) stay legal. NULL semantically means "quiz not
+    # yet taken"; analytics filter NULL when computing
+    # composite_expertise_z = z(occupation self-report) + z(quiz_score)
+    # for the RQ7 expert-vs-lay contrast.
+    quiz_q1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiz_q2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiz_q3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiz_q4: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiz_q5: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiz_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Relationship
     session: Mapped["Session"] = relationship("Session", back_populates="user_input")
 
