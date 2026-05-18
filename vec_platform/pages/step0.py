@@ -279,7 +279,7 @@ def step0_layout(session_id: str | None = None):
         # Familiarity question.
         html.Div([
             html.Label(
-                "How familiar are you with this concept?",
+                "S0-Q1 · How familiar are you with this concept?",
                 className="form-label fw-bold mb-2",
             ),
             dcc.RadioItems(
@@ -300,7 +300,7 @@ def step0_layout(session_id: str | None = None):
         # motivation, the 50% end states the high-bar joining condition.
         html.Div([
             html.Label(
-                "What is the minimum monthly saving (as % of your "
+                "S0-Q2 · What is the minimum monthly saving (as % of your "
                 "electricity bill) that would make you decide to join "
                 "such a community?",
                 className="form-label fw-bold mb-2",
