@@ -103,24 +103,6 @@ _FINAL_WILLINGNESS_OPTIONS = [
     {"label": "I would definitely not join", "value": 1},
 ]
 
-_EXPERT_Q1_OPTIONS = [
-    {"label": "1 — Very unrealistic", "value": 1},
-    {"label": "2 — Unrealistic", "value": 2},
-    {"label": "3 — Neutral", "value": 3},
-    {"label": "4 — Realistic", "value": 4},
-    {"label": "5 — Very realistic", "value": 5},
-]
-
-_EXPERT_Q2_OPTIONS = [
-    {"label": "Regulatory framework (Ei rules, billing settlement)",
-     "value": "regulatory"},
-    {"label": "Lack of consumer awareness", "value": "awareness"},
-    {"label": "Technical infrastructure (smart meters, data exchange)",
-     "value": "tech"},
-    {"label": "Financial incentives are too weak", "value": "incentives"},
-    {"label": "DSO/aggregator business models unclear", "value": "biz_model"},
-]
-
 _AGE_OPTIONS = [
     {"label": "18-29", "value": "18-29"},
     {"label": "30-39", "value": "30-39"},
@@ -191,66 +173,19 @@ def _radio_card(question: str, radio_id: str, options: list) -> dbc.Card:
     ]), className="mb-3")
 
 
-def _expert_block() -> list:
-    """Three extra questions for the high-familiarity subset. Caller
-    (step7_layout) decides whether to include via the
-    _EXPERT_FAMILIARITY_GATE check.
+def _survey_form(session_id: str) -> html.Div:
+    """Full survey form. Phase Q-1b: all participants see the same
+    questions — the v3.X-fix-9 ``is_expert`` branching and the
+    accompanying expert block (3 questions on realism / barrier /
+    free-text comment) have been removed. RQ7 expert-vs-lay analysis
+    is now fully post-hoc, using composite_expertise_z =
+    z(occupation self-report) + z(quiz_score) computed from existing
+    items.
 
-    Phase 3.X-fix-10: removed the leading ``html.Hr()`` divider and the
-    ``html.H3("Expert questions")`` group title. Users gated on
-    vec_familiarity should not be told they're being singled out as
-    experts — the three cards visually blend in with the rest of the
-    survey. The question wording is left intact (it lives inside the
-    cards and is part of the question content, not the framing).
-    """
-    return [
-        _radio_card(
-            "Based on your professional knowledge, how realistic is it "
-            "that the savings shown in this study would actually be "
-            "delivered to participants?",
-            "step7-expert-q1-realism", _EXPERT_Q1_OPTIONS,
-        ),
-        _radio_card(
-            "What do you think is the biggest barrier to widespread VEC "
-            "adoption in Sweden?",
-            "step7-expert-q2-barrier", _EXPERT_Q2_OPTIONS,
-        ),
-        dbc.Card(dbc.CardBody([
-            html.H4(
-                "How well does this stated-preference study capture "
-                "real-world VEC participation behaviour?"
-            ),
-            dcc.Textarea(
-                id="step7-expert-q3-comment",
-                placeholder="Optional, max 200 characters",
-                maxLength=200,
-                style={"width": "100%", "height": 80},
-            ),
-        ]), className="mb-3"),
-    ]
-
-
-def _survey_form(session_id: str, is_expert: bool) -> html.Div:
-    """Full survey form. Expert block visibility is decided by the caller
-    (step7_layout) — v3.X-fix-9 derives ``is_expert`` from
-    ``sessions.vec_familiarity ∈ _EXPERT_FAMILIARITY_GATE`` instead of
-    the former ``sessions.expertise == 'expert'`` self-label.
-
-    Phase 4-A-fix-1: the expert block is *always* rendered into the
-    DOM, but the wrapper html.Div is CSS-hidden (display:none) for
-    non-expert sessions. Pre-fix-1 the three widgets were conditionally
-    appended — that caused submit_survey's State refs to
-    ``step7-expert-q1-realism`` / ``-q2-barrier`` / ``-q3-comment`` to
-    raise Dash ReferenceError for the (vec_familiarity ≤ 3) majority,
-    silently dropping the Submit click. Same pattern as fix-14 in
-    step1.py: always-in-DOM keeps the callback graph valid; the schema
-    is nullable so the None values that flow in for hidden experts are
-    persisted unchanged."""
-
-    expert_block_wrapper = html.Div(
-        _expert_block(),
-        style={} if is_expert else {"display": "none"},
-    )
+    Note: _EXPERT_FAMILIARITY_GATE constant is retained at module
+    level because step1.py still imports it for the occupation
+    question's conditional rendering. That gating is removed in
+    Phase Q-1c."""
 
     return html.Div(id="step7-form", children=[
         # ----- Q1-Q3 baseline (v3.X-fix-8: original Q2 was merged into
@@ -316,10 +251,6 @@ def _survey_form(session_id: str, is_expert: bool) -> html.Div:
             "join a VEC tomorrow, what would you do?",
             "step7-final-willingness", _FINAL_WILLINGNESS_OPTIONS,
         ),
-
-        # ----- expert block (Phase 4-A-fix-1: always-in-DOM wrapper,
-        # CSS-hidden for non-experts) -----
-        expert_block_wrapper,
 
         # ----- v3.X-fix-7 / fix-8: E.ON Q13 drivers top-3 (also serves
         # as the merged Q2_reasons question) -----
@@ -438,11 +369,6 @@ def step7_layout(session_id: str | None):
             _thank_you_view(),
         ])
 
-    # v3.X-fix-9: gate switched from expertise self-label to a
-    # vec_familiarity threshold (top 2 of the 5-pt scale). expertise
-    # remains readable on the session object for backward compat.
-    is_expert = (session.vec_familiarity in _EXPERT_FAMILIARITY_GATE)
-
     return html.Div([
         html.H2("Step 7: Your decision"),
         html.P(
@@ -451,7 +377,7 @@ def step7_layout(session_id: str | None):
             "feel about joining?"
         ),
         html.Div(
-            _survey_form(session_id, is_expert=is_expert),
+            _survey_form(session_id),
             id="step7-content",
         ),
     ])
