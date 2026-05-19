@@ -440,14 +440,15 @@ class SurveyResponse(Base):
 
     # v3.X-fix-7 / fix-8 — E.ON alignment.
     #   drivers_top3: E.ON Q13, max-3 multi-select stored as a JSON list.
-    #     Allowed values: 'climate' / 'simplicity' / 'privacy' / 'savings'
-    #     / 'transparency' / 'grid_benefit' / 'control' / 'community' /
-    #     'other'. fix-8 merged the legacy Q2_reasons question into this
-    #     field — the 9 values keep E.ON Q13 cross-reference, but the
-    #     final-survey layout shows them under the conversational Q2
-    #     wording ("top reasons to join"). q2_reasons column kept as an
-    #     escape hatch for the legacy /api/survey endpoint but is no
-    #     longer written by the final-survey submit handler.
+    #     Allowed values: 'savings' / 'climate' / 'grid_benefit' /
+    #     'community' / 'utility_independence' / 'other' (Phase Q-3d
+    #     narrowed the set from 9 to 6 options and added
+    #     'utility_independence'; pre-Q-3d rows may contain dropped
+    #     values 'simplicity' / 'privacy' / 'transparency' / 'control'
+    #     — analysis filters at query time). fix-8 merged the legacy
+    #     Q2_reasons question into this field; q2_reasons column kept
+    #     as an escape hatch for the legacy /api/survey endpoint but
+    #     is no longer written by the final-survey submit handler.
     #
     # fairness_likert (E.ON Q11) was added in fix-7 and dropped in fix-8
     # (overlap with q6_fairness_pref + no clean placement on the impacts
