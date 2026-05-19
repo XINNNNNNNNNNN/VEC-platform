@@ -220,11 +220,20 @@ def _survey_form(session_id: str) -> html.Div:
             "step7-q7-transparency", _Q7_OPTIONS,
         ),
 
-        # ----- entry threshold slider -----
+        # ----- S7-Q7 entry threshold slider (Phase Q-2c) -----
+        # Hidden-until-drag pattern mirrors S0-Q2 on Welcome state_2:
+        # the display Div starts empty and the touched Store stays
+        # False until the participant interacts with the slider. The
+        # Submit-gate callback below treats a False touched flag the
+        # same as a missing required answer, so a default-0 slider
+        # cannot accidentally be submitted as "I'd join with no
+        # savings" — which would alias with the lowest legitimate
+        # answer (0 % threshold means "I'd join even with no savings").
         dbc.Card(dbc.CardBody([
             html.H4(
-                "S7-Q7 · Before joining, what minimum % of monthly bill savings "
-                "would you require to consider joining a VEC at all?"
+                "S7-Q7 · After everything you've seen, what minimum "
+                "monthly saving (as % of your electricity bill) would "
+                "you require to join a VEC?"
             ),
             dcc.Slider(
                 id="step7-entry-threshold-pct",
@@ -233,10 +242,19 @@ def _survey_form(session_id: str) -> html.Div:
                 tooltip={"placement": "bottom", "always_visible": False},
             ),
             html.Div(
-                "0%",
+                "",
                 id="step7-entry-threshold-display",
                 className="text-center fs-4 fw-bold mt-2",
             ),
+            html.Small(
+                "↓ Move the slider to set your threshold",
+                id="step7-entry-threshold-placeholder",
+                className="text-muted d-block text-center fs-6",
+            ),
+            # Touched flag: False at session start, flips True on first
+            # slider input. Lifecycle is the same as the Welcome
+            # state_2 threshold store — never goes back to False.
+            dcc.Store(id="step7-entry-threshold-touched-store", data=False),
         ]), className="mb-3"),
 
         # ----- exit threshold -----
@@ -389,11 +407,18 @@ def step7_layout(session_id: str | None):
 
 @dash_app.callback(
     Output("step7-entry-threshold-display", "children"),
+    Output("step7-entry-threshold-touched-store", "data"),
+    Output("step7-entry-threshold-placeholder", "style"),
     Input("step7-entry-threshold-pct", "value"),
+    prevent_initial_call=True,
 )
 def update_step7_entry_threshold_display(pct):
-    """Live "X%" label below the entry-threshold slider."""
-    return f"{pct}%"
+    """Phase Q-2c hidden-until-drag for S7-Q7. prevent_initial_call=True
+    is what makes the display start blank — the callback doesn't fire
+    on initial layout render. After the first slider interaction the
+    display fills, the touched store flips to True, and the placeholder
+    text is hidden via inline style override."""
+    return f"{pct}%", True, {"display": "none"}
 
 
 @dash_app.callback(
@@ -415,25 +440,37 @@ def warn_drivers_max(values):
     Input("step7-q5-trust-source", "value"),
     Input("step7-q6-fairness", "value"),
     Input("step7-q7-transparency", "value"),
+    Input("step7-entry-threshold-touched-store", "data"),
     Input("step7-exit-threshold", "value"),
     Input("step7-final-willingness", "value"),
     Input("step7-demo-age", "value"),
     Input("step7-demo-gender", "value"),
     Input("step7-drivers-top3", "value"),
 )
-def toggle_step7_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, drivers):
+def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, exit_t,
+                       final_w, age, gender, drivers):
     """Lock Submit until every required question has a value.
 
-    Required: Q1, Q4, Q5, Q6, Q7, exit threshold, final willingness, age,
-    gender. v3.X-fix-7 added drivers_top3 — must be 1.._DRIVERS_MAX picks.
+    Required: Q1, Q4, Q5, Q6, Q7, S7-Q7 entry threshold (must be
+    *touched*, not just present), exit threshold, final willingness,
+    age, gender. drivers_top3 must be 1.._DRIVERS_MAX picks.
+
+    Phase Q-2c: S7-Q7 was previously "default 0 counts as answered"
+    — but a default 0 means "I'd join even with no savings", which
+    is a legitimate answer the participant might actually want to
+    give. Conflating these two with the slider's HTML default
+    polluted the data. Switching to a touched-flag gate makes the
+    answer space unambiguous: every persisted entry_threshold_pct
+    is a deliberate user input.
+
     NOT required:
       - Q2/Q3 multi-select (empty list is acceptable, matches v3 baseline)
-      - entry threshold slider (default 0% counts as answered)
       - country dropdown (default 'SE' counts as answered)
-      - expert questions (optional even for experts — don't block them)
     """
     required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
     if any(v is None for v in required):
+        return True
+    if not entry_touched:
         return True
     n = len(drivers or [])
     if n < 1 or n > _DRIVERS_MAX:
@@ -458,6 +495,7 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
     State("step7-q6-fairness", "value"),
     State("step7-q7-transparency", "value"),
     State("step7-entry-threshold-pct", "value"),
+    State("step7-entry-threshold-touched-store", "data"),
     State("step7-exit-threshold", "value"),
     State("step7-final-willingness", "value"),
     State("step7-demo-age", "value"),
@@ -469,7 +507,7 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, exit_t, final_w, age, gender, driver
 )
 def submit_survey(n_clicks, q1, q3, q4,
                   q5, q6, q7,
-                  entry_pct, exit_t, final_w,
+                  entry_pct, entry_touched, exit_t, final_w,
                   age, gender, country,
                   drivers,
                   search):
@@ -496,6 +534,8 @@ def submit_survey(n_clicks, q1, q3, q4,
     required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
     if any(v is None for v in required):
         return no_update, "Please answer all required questions."
+    if not entry_touched:
+        return no_update, "Please move the entry-threshold slider to set your minimum saving requirement."
     drivers_count = len(drivers or [])
     if drivers_count < 1 or drivers_count > _DRIVERS_MAX:
         return no_update, f"Please pick between 1 and {_DRIVERS_MAX} drivers."
