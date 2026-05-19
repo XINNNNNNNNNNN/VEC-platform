@@ -530,16 +530,19 @@ class ExitThreshold(Base):
         Integer, nullable=True,
     )
 
-    # Phase Q-3e — S7-Q11 Hirschman (1970) rank. The participant ranks
-    # 4 possible reactions to a VEC that fell short of expectations,
-    # 1=most likely .. 4=least likely. Submitted as a permutation of
-    # {1,2,3,4} per session — the submit handler validates uniqueness
-    # before persisting. NULLs only on pre-Q-3e rows / partial
-    # submissions. Rank-ordered logit (RQ5 Analysis 3) consumes the 4
-    # columns jointly.
-    hirschman_exit_rank: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True,
-    )
+    # Phase Q-3e + Q-3e-redesign — S7-Q11 Hirschman-derived wait-period
+    # behavior rank. The participant ranks 4 possible reactions to a
+    # VEC where savings underperform but haven't yet crossed their
+    # S7-Q9 red line: voice / loyalty / passive / constructive. The
+    # ranking is a permutation of {1,2,3,4} (most likely .. least
+    # likely). Submit handler validates uniqueness before persisting.
+    # 'exit' was removed in Q-3e-redesign because S7-Q9 already
+    # measures the exit condition; the new 'constructive' rank
+    # captures "stay actively engaged for grid / environment benefit
+    # even when savings disappoint" — distinct from Sloot S1-Q6
+    # trait measurement (this is behavior under stress, not trait).
+    # Rank-ordered logit (RQ5 Analysis 3) consumes the 4 columns
+    # jointly. NULLs only on pre-Q-3e-redesign rows / partial submits.
     hirschman_voice_rank: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
     )
@@ -547,6 +550,9 @@ class ExitThreshold(Base):
         Integer, nullable=True,
     )
     hirschman_passive_rank: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    hirschman_constructive_rank: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
     )
 
