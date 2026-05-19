@@ -65,13 +65,27 @@ _Q4_OPTIONS = [
 
 # ----- v3.9 new options -----
 
-_Q5_OPTIONS = [
-    {"label": "Government / municipality", "value": "government"},
-    {"label": "My existing electricity supplier (e.g., E.ON, Vattenfall)",
-     "value": "utility"},
-    {"label": "Independent energy cooperative", "value": "coop"},
-    {"label": "Tech company (e.g., Tibber, Greenely)", "value": "tech"},
-    {"label": "I would not trust any of these", "value": "none"},
+# Phase Q-3c: S7-Q4 upgraded from single-select trust source to 5
+# independent 5-Likert ratings. The 5 targets cover the realistic
+# range of VEC organizers in Sweden (Ei policy reference: Ellevio,
+# E.ON; cooperative model: andelsförening; private tech: Tibber/
+# Greenely; grid operator: Svenska Kraftnät). Each rating is 1=No
+# trust .. 5=Complete trust. Persisted to 5 separate Integer columns
+# on survey_responses; SEM latent trust analysis fits a 1-factor
+# model across the 5 indicators.
+_TRUST_TARGETS = [
+    ("municipality", "The local municipality"),
+    ("coop", "A community cooperative"),
+    ("utility", "Your current electricity utility"),
+    ("private", "A private tech platform (e.g., a startup)"),
+    ("grid", "The national grid operator"),
+]
+_TRUST_LIKERT_OPTIONS = [
+    {"label": "1", "value": 1},
+    {"label": "2", "value": 2},
+    {"label": "3", "value": 3},
+    {"label": "4", "value": 4},
+    {"label": "5", "value": 5},
 ]
 
 _Q6_OPTIONS = [
@@ -82,11 +96,22 @@ _Q6_OPTIONS = [
     {"label": "I'm not sure", "value": "unsure"},
 ]
 
-_Q7_OPTIONS = [
-    {"label": "Just my monthly bill", "value": "minimal"},
-    {"label": "Plus a simple summary of my contribution", "value": "summary"},
-    {"label": "Plus details on community-wide flows", "value": "detailed"},
-    {"label": "Full transparency — all real-time data accessible", "value": "full"},
+# Phase Q-3c: S7-Q6 reshaped from single-Likert transparency to
+# multi-select data sovereignty. The 6 options cover the realistic
+# set of data operations a VEC member might want (GDPR rights +
+# pragmatic queries). Persisted as JSON list on
+# survey_responses.data_control_prefs. The trailing "no_detailed"
+# option provides a clean opt-out for participants who don't care
+# about granular control — selecting it together with other options
+# is ambiguous but accepted (analytics filter for "no_detailed" only
+# as the singleton "I don't care" group).
+_DATA_CONTROL_OPTIONS = [
+    {"label": "See my own household's usage anytime", "value": "own_usage"},
+    {"label": "See aggregated community data", "value": "agg_community"},
+    {"label": "See others (anonymized)", "value": "anon_others"},
+    {"label": "Decide what data is shared", "value": "decide_share"},
+    {"label": "Delete data anytime", "value": "delete_anytime"},
+    {"label": "I don't need detailed control", "value": "no_detailed"},
 ]
 
 _EXIT_OPTIONS = [
@@ -219,20 +244,45 @@ def _survey_form(session_id: str) -> html.Div:
 
         # ----- Q5 / Q6 / Q7 (v3.9) -----
         html.Hr(),
-        _radio_card(
-            "S7-Q4 · If a VEC service were available where you live, who would "
-            "you most trust to manage it?",
-            "step7-q5-trust-source", _Q5_OPTIONS,
-        ),
+        # ----- S7-Q4 5-rating trust battery (Phase Q-3c) -----
+        dbc.Card(dbc.CardBody([
+            html.H4(
+                "S7-Q4 · How much would you trust each of the "
+                "following to manage a VEC in your area? Rate each "
+                "1-5 (1=No trust, 5=Complete trust)."
+            ),
+            *[
+                html.Div([
+                    html.Label(label, className="form-label fw-bold mb-1 mt-2"),
+                    dcc.RadioItems(
+                        id=f"step7-trust-{key}",
+                        options=_TRUST_LIKERT_OPTIONS,
+                        value=None,
+                        inline=True,
+                        labelStyle={"padding": "0.2rem 0.8rem 0.2rem 0"},
+                    ),
+                ], className="mb-2")
+                for key, label in _TRUST_TARGETS
+            ],
+        ]), className="mb-3"),
         _radio_card(
             "S7-Q5 · If everyone in the VEC contributes differently (some have "
             "solar, some don't), how should the savings be split?",
             "step7-q6-fairness", _Q6_OPTIONS,
         ),
-        _radio_card(
-            "S7-Q6 · How much information would you want about the VEC's operation?",
-            "step7-q7-transparency", _Q7_OPTIONS,
-        ),
+        # ----- S7-Q6 data control multi-select (Phase Q-3c) -----
+        dbc.Card(dbc.CardBody([
+            html.H4(
+                "S7-Q6 · Which of these would you want to be ABLE to "
+                "do? (select all that apply)"
+            ),
+            dbc.Checklist(
+                id="step7-q6-data-control",
+                options=_DATA_CONTROL_OPTIONS,
+                value=[],
+                labelStyle={"display": "block", "padding": "0.3rem 0"},
+            ),
+        ]), className="mb-3"),
 
         # ----- S7-Q7 entry threshold slider (Phase Q-2c) -----
         # Hidden-until-drag pattern mirrors S0-Q2 on Welcome state_2:
@@ -471,9 +521,13 @@ def warn_drivers_max(values):
     Output("btn-submit-survey", "disabled"),
     Input("survey-q1", "value"),
     Input("survey-q4", "value"),
-    Input("step7-q5-trust-source", "value"),
+    Input("step7-trust-municipality", "value"),
+    Input("step7-trust-coop", "value"),
+    Input("step7-trust-utility", "value"),
+    Input("step7-trust-private", "value"),
+    Input("step7-trust-grid", "value"),
     Input("step7-q6-fairness", "value"),
-    Input("step7-q7-transparency", "value"),
+    Input("step7-q6-data-control", "value"),
     Input("step7-entry-threshold-touched-store", "data"),
     Input("step7-q8-entry-confidence", "value"),
     Input("step7-exit-threshold", "value"),
@@ -482,7 +536,10 @@ def warn_drivers_max(values):
     Input("step7-demo-gender", "value"),
     Input("step7-drivers-top3", "value"),
 )
-def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, q8_conf,
+def toggle_step7_submit(q1, q4,
+                       t_muni, t_coop, t_util, t_priv, t_grid,
+                       q6_fair, data_control,
+                       entry_touched, q8_conf,
                        exit_t, final_w, age, gender, drivers):
     """Lock Submit until every required question has a value.
 
@@ -502,13 +559,20 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, q8_conf,
       - Q2/Q3 multi-select (empty list is acceptable, matches v3 baseline)
       - country dropdown (default 'SE' counts as answered)
     """
-    required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
+    # Phase Q-3c: 5 trust ratings + data_control multi-select replace
+    # the old q5/q7 single answers. All 5 trust ratings required
+    # (SEM latent trust orientation needs the full battery); data
+    # control multi-select requires at least 1 pick (otherwise the
+    # answer is indistinguishable from "didn't read the question").
+    required = [q1, q4, q6_fair, exit_t, final_w, age, gender,
+                t_muni, t_coop, t_util, t_priv, t_grid]
     if any(v is None for v in required):
         return True
     if not entry_touched:
         return True
-    # Phase Q-2d: S7-Q8 is also required — no default value.
     if q8_conf is None:
+        return True
+    if not data_control:
         return True
     n = len(drivers or [])
     if n < 1 or n > _DRIVERS_MAX:
@@ -528,10 +592,15 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, q8_conf,
     State("survey-q1", "value"),
     State("survey-q3", "value"),
     State("survey-q4", "value"),
-    # v3.9 new states
-    State("step7-q5-trust-source", "value"),
+    # Phase Q-3c — 5 trust ratings replace q5_trust_source.
+    State("step7-trust-municipality", "value"),
+    State("step7-trust-coop", "value"),
+    State("step7-trust-utility", "value"),
+    State("step7-trust-private", "value"),
+    State("step7-trust-grid", "value"),
     State("step7-q6-fairness", "value"),
-    State("step7-q7-transparency", "value"),
+    # Phase Q-3c — data_control multi-select replaces q7_transparency_pref.
+    State("step7-q6-data-control", "value"),
     State("step7-entry-threshold-pct", "value"),
     State("step7-entry-threshold-touched-store", "data"),
     State("step7-q8-entry-confidence", "value"),
@@ -545,7 +614,8 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, q8_conf,
     prevent_initial_call=True,
 )
 def submit_survey(n_clicks, q1, q3, q4,
-                  q5, q6, q7,
+                  t_muni, t_coop, t_util, t_priv, t_grid,
+                  q6_fair, data_control,
                   entry_pct, entry_touched, q8_conf, exit_t, final_w,
                   age, gender, country,
                   drivers,
@@ -570,13 +640,17 @@ def submit_survey(n_clicks, q1, q3, q4,
 
     # Defensive validation — toggle keeps Submit disabled until these
     # are filled, but synthetic clicks could bypass the UI gate.
-    required = [q1, q4, q5, q6, q7, exit_t, final_w, age, gender]
+    # Phase Q-3c: full validation including 5 trust ratings + data control.
+    required = [q1, q4, q6_fair, exit_t, final_w, age, gender,
+                t_muni, t_coop, t_util, t_priv, t_grid]
     if any(v is None for v in required):
         return no_update, "Please answer all required questions."
     if not entry_touched:
         return no_update, "Please move the entry-threshold slider to set your minimum saving requirement."
     if q8_conf is None:
         return no_update, "Please answer S7-Q8 — how sure you are about the threshold you just set."
+    if not data_control:
+        return no_update, "Please select at least one data-control option for S7-Q6."
     drivers_count = len(drivers or [])
     if drivers_count < 1 or drivers_count > _DRIVERS_MAX:
         return no_update, f"Please pick between 1 and {_DRIVERS_MAX} drivers."
@@ -602,9 +676,18 @@ def submit_survey(n_clicks, q1, q3, q4,
         row.q1_willingness = q1
         row.q3_concerns = json.dumps(q3_trim)
         row.q4_savings_perception = q4
-        row.q5_trust_source = q5
-        row.q6_fairness_pref = q6
-        row.q7_transparency_pref = q7
+        # Phase Q-3c: 5 trust ratings replace q5_trust_source; data
+        # control multi-select replaces q7_transparency_pref. Both
+        # are persisted on the same survey_responses row.
+        row.trust_municipality = int(t_muni)
+        row.trust_coop = int(t_coop)
+        row.trust_utility = int(t_util)
+        row.trust_private = int(t_priv)
+        row.trust_grid = int(t_grid)
+        row.q6_fairness_pref = q6_fair
+        # data_control_prefs stored as JSON list (same pattern as
+        # q3_concerns / drivers_top3).
+        row.data_control_prefs = json.dumps(list(data_control or []))
         row.demo_age_range = age
         row.demo_gender = gender
         row.demo_country = country or "SE"
