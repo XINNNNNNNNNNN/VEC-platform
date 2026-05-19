@@ -461,6 +461,19 @@ class ExitThreshold(Base):
     entry_threshold_pct: Mapped[Optional[float]] = mapped_column(
         Float, nullable=True,
     )
+
+    # Phase Q-2d: S7-Q8 Final Decision Confidence. Pairs with
+    # user_inputs.entry_threshold_decision_confidence (Q-2a's S0-Q3)
+    # for the ΔConfidence = S7-Q8 - S0-Q3 analysis. Same 5-Likert
+    # anchor set as S0-Q3 (Very unsure / Somewhat unsure / Moderately
+    # sure / Quite sure / Very sure) but with a different question
+    # stem that explicitly anchors against social desirability ("not
+    # just what sounds reasonable"). Nullable because pre-Q-2d
+    # ExitThreshold rows pre-date the question.
+    entry_threshold_decision_confidence: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
     )
