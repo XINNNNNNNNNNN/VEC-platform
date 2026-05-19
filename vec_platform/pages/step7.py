@@ -118,6 +118,20 @@ _FINAL_WILLINGNESS_OPTIONS = [
     {"label": "5 — Very likely",        "value": 5},
 ]
 
+# Phase Q-2d: S7-Q8 Final Decision Confidence. Pair with S0-Q3
+# (Welcome state_2) for ΔConfidence analysis. Anchor labels match
+# S0-Q3 by design — Q-2a's _DECISION_CONFIDENCE_OPTIONS in step0.py
+# uses the same five labels. We duplicate them here rather than
+# cross-import because each page file stays self-contained, and the
+# label set is short + stable.
+_S7_Q8_OPTIONS = [
+    {"label": "1 — Very unsure", "value": 1},
+    {"label": "2 — Somewhat unsure", "value": 2},
+    {"label": "3 — Moderately sure", "value": 3},
+    {"label": "4 — Quite sure", "value": 4},
+    {"label": "5 — Very sure", "value": 5},
+]
+
 _AGE_OPTIONS = [
     {"label": "18-29", "value": "18-29"},
     {"label": "30-39", "value": "30-39"},
@@ -255,6 +269,26 @@ def _survey_form(session_id: str) -> html.Div:
             # slider input. Lifecycle is the same as the Welcome
             # state_2 threshold store — never goes back to False.
             dcc.Store(id="step7-entry-threshold-touched-store", data=False),
+        ]), className="mb-3"),
+
+        # ----- S7-Q8 Final Decision Confidence (Phase Q-2d) -----
+        # Mirror of S0-Q3 on Welcome state_2. Same 5-Likert anchor;
+        # different question stem (this one explicitly fights social
+        # desirability with the "not just what sounds reasonable"
+        # clause). Pairs with user_inputs.entry_threshold_decision_confidence
+        # via session_id for ΔConfidence = S7-Q8 - S0-Q3.
+        dbc.Card(dbc.CardBody([
+            html.H4(
+                "S7-Q8 · How sure are you that the % threshold you "
+                "just gave is the level you would actually require — "
+                "not just what sounds reasonable?"
+            ),
+            dcc.RadioItems(
+                id="step7-q8-entry-confidence",
+                options=_S7_Q8_OPTIONS,
+                value=None,
+                labelStyle={"display": "block", "padding": "0.3rem 0"},
+            ),
         ]), className="mb-3"),
 
         # ----- exit threshold -----
@@ -441,14 +475,15 @@ def warn_drivers_max(values):
     Input("step7-q6-fairness", "value"),
     Input("step7-q7-transparency", "value"),
     Input("step7-entry-threshold-touched-store", "data"),
+    Input("step7-q8-entry-confidence", "value"),
     Input("step7-exit-threshold", "value"),
     Input("step7-final-willingness", "value"),
     Input("step7-demo-age", "value"),
     Input("step7-demo-gender", "value"),
     Input("step7-drivers-top3", "value"),
 )
-def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, exit_t,
-                       final_w, age, gender, drivers):
+def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, q8_conf,
+                       exit_t, final_w, age, gender, drivers):
     """Lock Submit until every required question has a value.
 
     Required: Q1, Q4, Q5, Q6, Q7, S7-Q7 entry threshold (must be
@@ -471,6 +506,9 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, exit_t,
     if any(v is None for v in required):
         return True
     if not entry_touched:
+        return True
+    # Phase Q-2d: S7-Q8 is also required — no default value.
+    if q8_conf is None:
         return True
     n = len(drivers or [])
     if n < 1 or n > _DRIVERS_MAX:
@@ -496,6 +534,7 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, exit_t,
     State("step7-q7-transparency", "value"),
     State("step7-entry-threshold-pct", "value"),
     State("step7-entry-threshold-touched-store", "data"),
+    State("step7-q8-entry-confidence", "value"),
     State("step7-exit-threshold", "value"),
     State("step7-final-willingness", "value"),
     State("step7-demo-age", "value"),
@@ -507,7 +546,7 @@ def toggle_step7_submit(q1, q4, q5, q6, q7, entry_touched, exit_t,
 )
 def submit_survey(n_clicks, q1, q3, q4,
                   q5, q6, q7,
-                  entry_pct, entry_touched, exit_t, final_w,
+                  entry_pct, entry_touched, q8_conf, exit_t, final_w,
                   age, gender, country,
                   drivers,
                   search):
@@ -536,6 +575,8 @@ def submit_survey(n_clicks, q1, q3, q4,
         return no_update, "Please answer all required questions."
     if not entry_touched:
         return no_update, "Please move the entry-threshold slider to set your minimum saving requirement."
+    if q8_conf is None:
+        return no_update, "Please answer S7-Q8 — how sure you are about the threshold you just set."
     drivers_count = len(drivers or [])
     if drivers_count < 1 or drivers_count > _DRIVERS_MAX:
         return no_update, f"Please pick between 1 and {_DRIVERS_MAX} drivers."
@@ -570,6 +611,10 @@ def submit_survey(n_clicks, q1, q3, q4,
         row.drivers_top3 = json.dumps(drivers_trim)  # v3.X-fix-7 / fix-8
 
         # 2) exit_thresholds — single row per session (upsert pattern).
+        # Phase Q-2d: write entry_threshold_decision_confidence on the
+        # same row that already carries entry_threshold_pct (S7-Q7) and
+        # threshold_ratio (S7-Q9). Single-row design keeps the per-
+        # session threshold/confidence triplet atomic for analysis.
         et = (
             db.query(ExitThreshold)
             .filter(ExitThreshold.session_id == session_id)
@@ -580,6 +625,7 @@ def submit_survey(n_clicks, q1, q3, q4,
             db.add(et)
         et.threshold_ratio = float(exit_t)
         et.entry_threshold_pct = float(entry_pct)
+        et.entry_threshold_decision_confidence = int(q8_conf)
 
         # 3) willingness_measurements round=3. Phase E: switched from
         # defensive-idempotency to an explicit upsert so a participant
