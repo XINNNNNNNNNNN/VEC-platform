@@ -96,11 +96,25 @@ _EXIT_OPTIONS = [
     {"label": "I would not leave even if savings were zero", "value": -1.0},
 ]
 
+# Phase Q-2b: standardized 5-point 'how likely' anchor. Replaces the
+# Phase 3.9 4-point reversed-order set ({4:definitely join, 3:probably
+# join, 2:probably not, 1:definitely not}). Three changes:
+#   1. Range expands 1..4 → 1..5 (adds 'Undecided' midpoint).
+#   2. Value semantics flip: 1 is now LEAST likely (was 'definitely not'
+#      = 1 already, so 1 stays the lowest endpoint), 5 is now MOST
+#      likely (was 'definitely join' = 4).
+#   3. scale_type at write-time changes from '4point_accept' to
+#      '5point_likely' so analysis can distinguish historical dogfood
+#      rows (which were written under the 4-point scheme) from
+#      pilot-era rows under the new uniform scheme.
+# Anchors are identical to IC-Q1 (info_calibration.py) and S5-Q3
+# (step5.py) — the three rounds are now directly paired in analysis.
 _FINAL_WILLINGNESS_OPTIONS = [
-    {"label": "I would definitely join", "value": 4},
-    {"label": "I would probably join", "value": 3},
-    {"label": "I would probably not join", "value": 2},
-    {"label": "I would definitely not join", "value": 1},
+    {"label": "1 — Very unlikely",      "value": 1},
+    {"label": "2 — Somewhat unlikely",  "value": 2},
+    {"label": "3 — Undecided",          "value": 3},
+    {"label": "4 — Somewhat likely",    "value": 4},
+    {"label": "5 — Very likely",        "value": 5},
 ]
 
 _AGE_OPTIONS = [
@@ -178,7 +192,8 @@ def _survey_form(session_id: str) -> html.Div:
         # drivers_top3 below, so this block is now Q1 / Q2 (concerns) /
         # Q3 (savings perception). The "top reasons" question lives in
         # the drivers_top3 card further down.) -----
-        html.H5("S7-Q1 · How likely are you to actually join a VEC like this?"),
+        html.H5("S7-Q1 · After everything you've seen, how likely are "
+                "you to actually join a VEC like this?"),
         dbc.RadioItems(id="survey-q1", options=_Q1_OPTIONS, value=None, className="mb-4"),
 
         html.H5("S7-Q2 · What would worry you the most? (pick up to 3)"),
@@ -530,11 +545,14 @@ def submit_survey(n_clicks, q1, q3, q4,
         # who edits the survey after submitting (or whose double-click
         # races) sees their latest final-acceptance Likert recorded
         # instead of the first one being kept and the new one dropped.
+        # Phase Q-2b: scale_type standardized to '5point_likely' and
+        # value range expanded 1..4 → 1..5 to match the new ascending
+        # 5-point anchor (see _FINAL_WILLINGNESS_OPTIONS).
         from vec_platform.pages._upsert_helpers import upsert_willingness
         upsert_willingness(
             db, session_id,
             round_=3,
-            scale_type="4point_accept",
+            scale_type="5point_likely",
             value=final_w,
         )
 
