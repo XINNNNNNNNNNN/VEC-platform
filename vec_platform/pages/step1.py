@@ -412,13 +412,14 @@ _DEFAULT_BESS_KWH = 10.0
 _SCENARIOS = ("no_vec", "vec_no_adjust", "vec_adjusted")
 
 
+# Hotfix v2: url Outputs gain allow_duplicate=True because
+# welcome_state3_submit in step0.py also writes them. q*-hint
+# Outputs stay singleton-writer here because the per-Q clear
+# callbacks are the ones with allow_duplicate=True (this submit
+# callback remains the canonical writer of hint text).
 @dash_app.callback(
-    Output("url", "pathname"),
-    Output("url", "search"),
-    # Phase O-fix-10: per-Q hint Outputs. allow_duplicate not needed
-    # here because this callback is the canonical writer; the per-Q
-    # clear callbacks declare allow_duplicate on their copies of
-    # these Outputs.
+    Output("url", "pathname", allow_duplicate=True),
+    Output("url", "search", allow_duplicate=True),
     Output("q1-hint", "children"),
     Output("q3-hint", "children"),
     Output("q4-hint", "children"),
