@@ -364,6 +364,20 @@ class SurveyResponse(Base):
         Integer, nullable=True,
     )
 
+    # Phase Q-3b — Step 5 effort×reward satisfaction Likert. Asked
+    # immediately after the disconfirmation emotion question. The
+    # platform displays the actual SEK-extra the participant earned
+    # by shifting devices (bills.vec_no_adjust.net_cost minus
+    # bills.vec_adjusted.net_cost) and the participant reacts with
+    # 1=Not satisfied (not worth the effort) .. 5=Very satisfied
+    # (clearly worth it). Pairs with S4-Q2 effort perception for the
+    # effort×reward quadrant analysis (Sloot 2022). Replaces the v2
+    # "minimum SEK to make it worth" question which had explicit
+    # anchor bias.
+    shift_satisfaction: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     # v3.8 — Step 6 impacts-page broader-impacts shift Likert (renamed
     # from step7_* in Phase 4-A). "Now that you've seen the policy /
     # grid / environment tabs, has this changed your view about joining
