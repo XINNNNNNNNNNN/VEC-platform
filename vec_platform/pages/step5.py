@@ -14,7 +14,12 @@ questions at the bottom:
   Q1 emotional reaction — 5-point Likert (Phase Q-3a: redesigned
      from cognitive comparison to disconfirmation emotion per Oliver
      1980), persisted on survey_responses.step5_disconfirmation_emotion
-  Q2 how-likely Likert — 5-point, persisted as
+  Q2 shift satisfaction — 5-point Likert (Phase Q-3b: new question
+     replacing the v2 "minimum SEK to make it worth" anchor-biased
+     question). Asks how satisfied the participant is with the actual
+     SEK-extra earned by shifting devices. Persisted on
+     survey_responses.shift_satisfaction.
+  Q3 how-likely Likert — 5-point, persisted as
      willingness_measurements(round=2, scale_type='5point_likely').
      Phase Q-2b standardized this anchor across all three measurement
      rounds (info_calibration / Step 5 / Step 7) so cross-round
@@ -331,6 +336,37 @@ def step5_layout(session_id: str | None):
     expected_str = f"{expected_pct:.0f}%" if expected_pct is not None else "—%"
     actual_str = f"{actual_pct:.1f}%" if actual_pct is not None else "—%"
 
+    # Phase Q-3b: compute the extra SEK saved by SHIFTING devices on top
+    # of just joining VEC. vec_no_adjust = "joined but didn't shift";
+    # vec_adjusted = "joined and shifted". The difference is exactly
+    # the contribution of the participant's price-response behavior,
+    # which is what S5-Q2 asks them to react to.
+    vec_no_adjust_net = bills["vec_no_adjust"].net_cost
+    shift_extra = vec_no_adjust_net - vec_adjusted_net  # positive when shifting helped
+
+    # Sign-aware display text. The negative case is real in dogfood
+    # (a participant who shifted loads INTO an expensive hour); we
+    # still ask the satisfaction question — a negative shift_extra
+    # paired with a high satisfaction is a research-relevant data
+    # point (someone who didn't notice / didn't care about the
+    # bill impact).
+    if shift_extra > 0:
+        shift_display = (
+            f"By adjusting device timing, you saved an extra "
+            f"{shift_extra:,.0f} SEK/month on top of just joining VEC."
+        )
+    elif shift_extra < 0:
+        shift_display = (
+            f"After adjusting device timing, your bill actually "
+            f"increased by {abs(shift_extra):,.0f} SEK/month compared "
+            f"to joining VEC without adjusting."
+        )
+    else:
+        shift_display = (
+            "Adjusting device timing made no extra change to your "
+            "bill on top of joining VEC."
+        )
+
     net_baseline = json.loads(p2.net_load)
     net_customized = json.loads(p3.net_load)
     net_responsive = json.loads(p5.net_load)
@@ -395,6 +431,41 @@ def step5_layout(session_id: str | None):
             ]),
         ], className="mb-3"),
 
+        # ----- S5-Q2 effort×reward satisfaction (Phase Q-3b) -----
+        # Asks the participant to react to the SEK-extra they actually
+        # earned by shifting devices. Replaces the v2 "minimum SEK
+        # to make shifting worth" question (anchor bias). Pairs with
+        # S4-Q2 effort perception for quadrant analysis.
+        dbc.Card([
+            dbc.CardBody([
+                html.P(
+                    shift_display,
+                    className="text-muted small mb-2",
+                ),
+                html.H4(
+                    "S5-Q2 · How satisfied are you with this extra saving, "
+                    "given the planning effort it took?"
+                ),
+                dcc.RadioItems(
+                    id="step5-shift-satisfaction",
+                    options=[
+                        {"label": "1 — Not satisfied — not worth my effort",
+                         "value": 1},
+                        {"label": "2 — Somewhat unsatisfied",
+                         "value": 2},
+                        {"label": "3 — Neutral",
+                         "value": 3},
+                        {"label": "4 — Satisfied",
+                         "value": 4},
+                        {"label": "5 — Very satisfied — clearly worth it",
+                         "value": 5},
+                    ],
+                    value=None,
+                    labelStyle={"display": "block", "padding": "0.3rem 0"},
+                ),
+            ]),
+        ], className="mb-3"),
+
         dbc.Card([
             dbc.CardBody([
                 html.H4(
@@ -442,11 +513,16 @@ def step5_layout(session_id: str | None):
 @dash_app.callback(
     Output("step5-next-btn", "disabled"),
     Input("step5-expectation-vs-reality", "value"),
+    Input("step5-shift-satisfaction", "value"),
     Input("step5-consider-willingness", "value"),
 )
-def toggle_step5_next(q1, q2):
-    """Lock Next until both Likert questions are answered."""
-    return q1 is None or q2 is None
+def toggle_step5_next(q1, q2_sat, q3):
+    """Phase Q-3b: lock Next until all 3 Likert questions are answered.
+    q1=S5-Q1 disconfirmation emotion, q2_sat=S5-Q2 shift satisfaction,
+    q3=S5-Q3 willingness. Parameter NAME for the willingness changed
+    from q2 to q3 to match the v3 question numbering — local rename,
+    no Dash graph impact."""
+    return q1 is None or q2_sat is None or q3 is None
 
 
 @dash_app.callback(
@@ -454,20 +530,24 @@ def toggle_step5_next(q1, q2):
     Output("step5-error", "children"),
     Input("step5-next-btn", "n_clicks"),
     State("step5-expectation-vs-reality", "value"),
+    State("step5-shift-satisfaction", "value"),
     State("step5-consider-willingness", "value"),
     State("url", "search"),
     prevent_initial_call=True,
 )
-def submit_step5(n_clicks, q1, q2, search):
-    """Persist Q1 onto survey_responses + Q2 as round-2 willingness, nav to Step 6."""
+def submit_step5(n_clicks, q1, q2_sat, q3, search):
+    """Phase Q-3b: persist Q1 (disconfirmation emotion) + Q2 (shift
+    satisfaction) onto survey_responses + Q3 as round-2 willingness,
+    nav to Step 6. Parameter NAME for the willingness changed q2→q3
+    to match v3 question numbering."""
     if not n_clicks:
         return no_update, no_update
 
     session_id = _parse_session_id(search)
     if not session_id:
         return no_update, "Session id missing — please start from '/'."
-    if q1 is None or q2 is None:
-        return no_update, "Please answer both questions."
+    if q1 is None or q2_sat is None or q3 is None:
+        return no_update, "Please answer all three questions."
 
     from vec_platform.models import Session as SessionModel
     from vec_platform.pages._survey_helpers import get_or_create_survey_row
@@ -486,11 +566,10 @@ def submit_step5(n_clicks, q1, q2, search):
         row = get_or_create_survey_row(db, session_id)
         row.step5_disconfirmation_emotion = int(q1)
 
-        # Q2: willingness_measurements table holds three measurements
-        # per session (info_calibration / Step 5 / Step 7). Phase E:
-        # switched from defensive-idempotency (which silently dropped
-        # the new value on resubmit) to an explicit upsert that records
-        # the participant's latest answer.
+        # Phase Q-3b: shift_satisfaction is a brand-new column —
+        # straight write, no upsert helper.
+        row.shift_satisfaction = int(q2_sat)
+
         # Phase Q-2b: scale_type standardized to '5point_likely' across
         # all three rounds. Widget id step5-consider-willingness kept
         # for callback graph stability; semantic is now 'how likely'
@@ -499,7 +578,7 @@ def submit_step5(n_clicks, q1, q2, search):
             db, session_id,
             round_=2,
             scale_type="5point_likely",
-            value=q2,
+            value=q3,
         )
 
         # Phase 4-A: advance to current_step=6 (next page is impacts,
