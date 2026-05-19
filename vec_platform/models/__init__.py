@@ -467,16 +467,30 @@ class ExitThreshold(Base):
 
 
 class WillingnessMeasurement(Base):
-    """Three measurements of willingness across the journey.
+    """Three measurements of willingness across the journey, on a
+    standardized 5-point 'how likely' anchor (Phase Q-2b).
 
     Phase 4-A flow positions (formerly Step 6 / Step 8 → now Step 5 /
     Step 7):
 
-    round=1 — info-calibration page, 7-point Likert ("how interested
-              are you in joining?")
-    round=2 — Step 5 compare page (after seeing the bill comparison),
-              5-point Likert ("would you actually consider joining?")
-    round=3 — Step 7 final survey (final acceptance), 4-point scale
+    round=1 — info-calibration page (IC-Q1, after concept reveal +
+              arm-specific framing)
+    round=2 — Step 5 compare page (S5-Q3, after seeing the bill
+              comparison)
+    round=3 — Step 7 final survey (S7-Q1, after the full journey)
+
+    All three rounds use:
+      - identical wording: 'how likely are you to join a VEC'
+      - identical 5-Likert anchor: 1=Very unlikely .. 5=Very likely
+      - scale_type='5point_likely' at write-time
+
+    The shared anchor makes the three rounds directly paired in
+    analysis (delta_2_1, delta_3_2, delta_3_1).
+
+    Legacy scale_type values pre-Q-2b ('7point_interest' /
+    '5point_interest' / '5point_consider' / '4point_accept') may
+    exist in dogfood data from earlier phases — analytics filter by
+    scale_type to separate pre-Q-2b rows from pilot-era rows.
 
     Phase 3.2b's first write was the round=1 row; the other rounds
     land later in the journey.
@@ -489,7 +503,11 @@ class WillingnessMeasurement(Base):
     )
     round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 | 2 | 3
     scale_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    # ^ '7point_interest' | '5point_consider' | '4point_accept'
+    # ^ Phase Q-2b: '5point_likely' is the standardized value for new
+    # writes across all three rounds. Pre-Q-2b legacy values that may
+    # appear in dogfood rows: '7point_interest' / '5point_interest' /
+    # '5point_consider' / '4point_accept'. Filter by scale_type at
+    # analysis time to scope rows correctly.
     value: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
