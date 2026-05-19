@@ -650,9 +650,16 @@ def welcome_state2_submit(n_clicks, familiarity, threshold_pct, touched,
 
 # ===================== Phase Q-2a: state_3 cheap-talk =====================
 
+# Hotfix v2: allow_duplicate=True on both url Outputs is required
+# because submit_step1 in step1.py also writes Output("url", ...).
+# Dash 4.x routes the most recent caller's value to the url
+# component; both callbacks navigate to /dash/step1?session_id=...
+# anyway (state_3 enters the page, submit_step1 leaves it for
+# /dash/tenant_disclaimer or /dash/info_calibration), so the
+# "most recent writer wins" semantic is exactly what we want.
 @dash_app.callback(
-    Output("url", "pathname"),
-    Output("url", "search"),
+    Output("url", "pathname", allow_duplicate=True),
+    Output("url", "search", allow_duplicate=True),
     Input("welcome-state3-next", "n_clicks"),
     State("url", "search"),
     prevent_initial_call=True,
