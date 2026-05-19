@@ -1043,6 +1043,12 @@
   let _calibrationPatchPending = {};
   let _calibrationTimer = null;
 
+  // Phase Q-2c: hidden-until-drag for the S2-Q1 expectation slider.
+  // Module-level so the reset handler in setupButtons can clear it.
+  // Initial value false — the slider's HTML default value=0 is NOT a
+  // user-supplied answer until they interact with it.
+  let _expectationTouched = false;
+
   function buildCapacityPatch(prefix) {
     const meta = _CAP_FIELDS[prefix];
     const inp = document.getElementById(`${prefix}-capacity-input`);
@@ -1150,17 +1156,38 @@
   }
 
   // ---- v3.4: end-of-Step-3 questions (second prior expectation + confidence) ----
+  // Phase Q-2c: hidden-until-drag for S2-Q1 + composite Next gate.
+  // Next now enables only when BOTH (a) the slider has been touched
+  // (so a default 0 isn't conflated with a real "I'd join with no
+  // savings" answer) AND (b) the confidence Likert is answered.
   function setupQuestionControls() {
-    // Live "X%" label below the slider.
-    $("step3-expectation-pct").addEventListener("input", (e) => {
-      $("step3-expectation-display").textContent = e.target.value;
+    const slider = $("step3-expectation-pct");
+    const display = $("step3-expectation-display");
+    const placeholder = $("step3-expectation-placeholder");
+    const btn = $("btn-confirm");
+
+    function updateConfirmEnabled() {
+      const checked = document.querySelector(
+        'input[name="step3-confidence"]:checked'
+      );
+      btn.disabled = !(_expectationTouched && checked);
+    }
+
+    // Live "X%" label + touched flip on slider input.
+    slider.addEventListener("input", (e) => {
+      _expectationTouched = true;
+      display.textContent = e.target.value + "%";
+      if (placeholder) placeholder.style.display = "none";
+      updateConfirmEnabled();
     });
-    // Likert change → enable Confirm.
+
+    // Likert change → re-evaluate composite Next gate.
     document.querySelectorAll('input[name="step3-confidence"]').forEach((radio) => {
-      radio.addEventListener("change", () => {
-        $("btn-confirm").disabled = false;
-      });
+      radio.addEventListener("change", updateConfirmEnabled);
     });
+
+    // Initial: slider untouched + nothing checked → Confirm disabled.
+    updateConfirmEnabled();
   }
 
   function getQuestionAnswers() {
@@ -1201,6 +1228,22 @@
       // Reset scaling display.
       const scalingDisplay = $("scaling-display");
       if (scalingDisplay) scalingDisplay.textContent = "0%";
+
+      // Phase Q-2c: reset the S2-Q1 expectation slider + display to
+      // a fresh "never touched" state, matching the rest of the
+      // reset semantics. Confirm goes back to disabled.
+      const expSlider = $("step3-expectation-pct");
+      const expDisplay = $("step3-expectation-display");
+      const expPlaceholder = $("step3-expectation-placeholder");
+      if (expSlider) expSlider.value = 0;
+      if (expDisplay) expDisplay.textContent = "";
+      if (expPlaceholder) expPlaceholder.style.display = "";  // un-hide
+      _expectationTouched = false;
+      // Clear confidence Likert + disable Confirm.
+      document.querySelectorAll('input[name="step3-confidence"]').forEach((radio) => {
+        radio.checked = false;
+      });
+      $("btn-confirm").disabled = true;
 
       // Persist defaults to user_inputs (atomic 7-field reset).
       // Cancel any pending debounced PUT first so it doesn't fire
@@ -1395,6 +1438,21 @@
     if (btn) btn.textContent = "Next";
     const err = document.getElementById("step3-error");
     if (err) err.textContent = "";
+
+    // Phase Q-2c: BFCache restores the slider's DOM value but not the
+    // module-level _expectationTouched flag, so the Next gate would
+    // be stuck even with a clearly-dragged slider. If the display
+    // span has non-empty text on restore, treat that as evidence
+    // the user already moved the slider in this session and reset
+    // the touched flag accordingly.
+    const display = document.getElementById("step3-expectation-display");
+    if (display && display.textContent.trim() !== "") {
+      _expectationTouched = true;
+      // hide placeholder which BFCache may have preserved as visible
+      const placeholder = document.getElementById("step3-expectation-placeholder");
+      if (placeholder) placeholder.style.display = "none";
+    }
+
     // Phase J-fix-1: dispatch a synthetic change event on the
     // currently-checked confidence radio so the existing change
     // handler re-runs btn.disabled = false. Chromium does NOT fire
@@ -1404,6 +1462,9 @@
     // If nothing is checked the synthetic dispatch is skipped and
     // the button correctly stays disabled until the participant
     // makes a real selection.
+    // Phase Q-2c: the closure inside setupQuestionControls re-reads
+    // _expectationTouched at call time, so the synthetic-change path
+    // automatically incorporates the touched flag restored above.
     const checkedConfidence = document.querySelector(
       'input[name="step3-confidence"]:checked'
     );
