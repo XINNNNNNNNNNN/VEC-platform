@@ -180,21 +180,29 @@ _COUNTRY_OPTIONS = [
 
 
 
-# v3.X-fix-7 / fix-8 — E.ON Q13 alignment + merged legacy Q2_reasons.
-# The 9 values keep E.ON Q13 cross-reference (so the column directly
-# compares to the E.ON survey); the visible labels were rewritten in
-# fix-8 to the conversational Q2-style wording for pilot UX.
-# Stored as a JSON-encoded list on survey_responses.drivers_top3.
+# Phase Q-3d: drivers narrowed from 9 to 6 options, symmetric with
+# S7-Q2's 6 concerns options. Three v2 options removed for coverage
+# overlap with other Step 7 measurements:
+#   - simplicity (S7-Q3 savings adequacy already captures this)
+#   - privacy (S7-Q2 concerns already lists this as a barrier)
+#   - transparency (S7-Q6 data control multi-select supersedes it)
+#   - control (S7-Q6 data control multi-select supersedes it)
+# One new option added: utility_independence — captures the "I want
+# to be less dependent on the big utility" framing common in Swedish
+# energy-cooperative discourse. The 5 retained options keep their
+# value keys for backward-compatible analysis. Labels reworded to
+# match v3's plain-English form (e.g., "savings" → "Save money").
+# Stored as a JSON-encoded list on survey_responses.drivers_top3
+# (column unchanged; pre-Q-3d rows may carry dropped values —
+# analysis filters by value at query time).
 _DRIVERS_OPTIONS = [
-    {"label": "Save money on my bill",          "value": "savings"},
-    {"label": "Environmental / climate impact", "value": "climate"},
-    {"label": "Support my local community",     "value": "community"},
-    {"label": "More control over my energy",    "value": "control"},
-    {"label": "Looks simple / easy to use",     "value": "simplicity"},
-    {"label": "Privacy of my data",             "value": "privacy"},
-    {"label": "Transparent benefit sharing",    "value": "transparency"},
-    {"label": "Helps the local grid",           "value": "grid_benefit"},
-    {"label": "Other",                           "value": "other"},
+    {"label": "Save money", "value": "savings"},
+    {"label": "Reduce carbon footprint", "value": "climate"},
+    {"label": "Help local grid", "value": "grid_benefit"},
+    {"label": "Build connection with neighbours", "value": "community"},
+    {"label": "Be more independent from utility",
+     "value": "utility_independence"},
+    {"label": "Other", "value": "other"},
 ]
 _DRIVERS_MAX = 3
 
