@@ -258,7 +258,8 @@ def _info_cal_clear_hint(_value):
 def submit_info_cal(n_clicks, likert_value, search):
     """Validate, persist round=1 willingness, hand off to /step3.
 
-    Phase P-1: scale_type='5point_interest' (was '7point_interest').
+    Phase Q-2b: scale_type='5point_likely' (was '5point_interest' in
+    P-1, '7point_interest' before that).
     Phase 4-A: destination /step3 (the static customize page) is
     outside the Dash mount, so the refresh=True info-cal-redirect
     Location is required to trigger a full browser navigation.

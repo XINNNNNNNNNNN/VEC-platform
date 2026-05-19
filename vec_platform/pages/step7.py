@@ -17,7 +17,8 @@ Survey content:
 
 Submitting upserts survey_responses, upserts a single exit_thresholds
 row (carrying both entry and exit thresholds), and inserts a
-willingness_measurements(round=3, scale_type='4point_accept') row.
+willingness_measurements(round=3, scale_type='5point_likely') row.
+(Phase Q-2b standardized the anchor and expanded 4-point → 5-point.)
 
 Importing this module registers three Dash callbacks against
 ``dash_app``: slider display, Submit-enable gate, Submit handler.
