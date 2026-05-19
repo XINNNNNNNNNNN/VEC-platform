@@ -11,8 +11,9 @@ baseline / customized / responded profiles, builds three summary cards,
 a breakdown table and a three-line net-load chart. Two follow-up
 questions at the bottom:
 
-  Q1 disappointment vs expectation — 5-point Likert, persisted on
-     survey_responses.step5_expectation_vs_reality
+  Q1 emotional reaction — 5-point Likert (Phase Q-3a: redesigned
+     from cognitive comparison to disconfirmation emotion per Oliver
+     1980), persisted on survey_responses.step5_disconfirmation_emotion
   Q2 how-likely Likert — 5-point, persisted as
      willingness_measurements(round=2, scale_type='5point_likely').
      Phase Q-2b standardized this anchor across all three measurement
@@ -280,6 +281,24 @@ def step5_layout(session_id: str | None):
         p2 = _get_profile_at_step(db, session_id, 2)
         p3 = _get_profile_at_step(db, session_id, 3) or p2
         p5 = _get_profile_at_step(db, session_id, 5) or p3
+
+        # Phase Q-3a: pull the participant's S2-Q1 expected-savings %
+        # (prior_expectations round=2, written at the customize page)
+        # for the disconfirmation display above S5-Q1. round=2 is
+        # the post-customize estimate — strongest expectation signal
+        # in the journey because by then the participant has seen
+        # their own profile, dragged devices, and watched the bill
+        # update live.
+        from vec_platform.models import PriorExpectation
+        prior = (
+            db.query(PriorExpectation)
+            .filter(
+                PriorExpectation.session_id == session_id,
+                PriorExpectation.measurement_round == 2,
+            )
+            .first()
+        )
+        expected_pct = float(prior.pct) if prior is not None else None
     finally:
         db.close()
 
@@ -293,6 +312,24 @@ def step5_layout(session_id: str | None):
         ])
 
     baseline_net = bills["no_vec"].net_cost
+
+    # Phase Q-3a: compute the actual savings % participants achieved
+    # under the responsive-VEC scenario (the most-saved column). This
+    # is what the platform displays above S5-Q1 — the participant
+    # reacts emotionally to the gap between this and expected_pct
+    # rather than computing the comparison themselves.
+    vec_adjusted_net = bills["vec_adjusted"].net_cost
+    actual_pct = None
+    if baseline_net:  # guard against zero baseline (PV-rich edge case)
+        actual_pct = (baseline_net - vec_adjusted_net) / baseline_net * 100
+
+    # Render the disconfirmation display strings, with "—%" fallback
+    # for either missing piece. We don't want a missing prior to
+    # block the page; in dogfood / partial sessions either number
+    # may be absent, and the question still works (the participant
+    # can react to the actual figure alone, or skip if both are gone).
+    expected_str = f"{expected_pct:.0f}%" if expected_pct is not None else "—%"
+    actual_str = f"{actual_pct:.1f}%" if actual_pct is not None else "—%"
 
     net_baseline = json.loads(p2.net_load)
     net_customized = json.loads(p3.net_load)
@@ -325,23 +362,32 @@ def step5_layout(session_id: str | None):
             )),
         ], className="mb-3"),
 
-        # ----- disappointment + consider Likerts -----
+        # ----- S5-Q1 emotional reaction + S5-Q3 willingness Likerts -----
+        # Phase Q-3a: S5-Q1 redesigned from cognitive comparison to
+        # emotional reaction (Oliver 1980 disconfirmation theory). The
+        # platform now DISPLAYS the expected-vs-actual numbers in the
+        # small grey text above the question, so the participant reacts
+        # to the gap rather than computing it. Widget id
+        # `step5-expectation-vs-reality` is preserved for callback graph
+        # stability even though the semantic is now disconfirmation
+        # emotion — see DB column rename (Phase Q-3a migration).
         html.Hr(),
         dbc.Card([
             dbc.CardBody([
-                html.H4(
-                    "S5-Q1 · Looking at how much the three options would actually save "
-                    "you, how does this compare to what you expected before "
-                    "seeing your own profile?"
+                html.P(
+                    f"You estimated savings of {expected_str}, and your "
+                    f"actual savings turned out to be {actual_str}.",
+                    className="text-muted small mb-2",
                 ),
+                html.H4("S5-Q1 · How do you FEEL about this result?"),
                 dcc.RadioItems(
                     id="step5-expectation-vs-reality",
                     options=[
-                        {"label": "1 — Much less than I expected",  "value": 1},
-                        {"label": "2 — Less than I expected",       "value": 2},
-                        {"label": "3 — About what I expected",      "value": 3},
-                        {"label": "4 — More than I expected",       "value": 4},
-                        {"label": "5 — Much more than I expected",  "value": 5},
+                        {"label": "1 — Very disappointed",          "value": 1},
+                        {"label": "2 — Somewhat disappointed",      "value": 2},
+                        {"label": "3 — It is what I expected",      "value": 3},
+                        {"label": "4 — Somewhat pleased",           "value": 4},
+                        {"label": "5 — Very pleased",               "value": 5},
                     ],
                     value=None,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
@@ -433,9 +479,12 @@ def submit_step5(n_clicks, q1, q2, search):
         if sess is None:
             return no_update, "Session not found."
 
-        # Q1: upsert disappointment Likert onto the per-session survey row.
+        # Phase Q-3a: write to the renamed column reflecting the new
+        # emotional-reaction semantic (Oliver 1980 disconfirmation).
+        # Widget id at the UI layer kept its old name for callback
+        # graph stability, but the persisted column is renamed.
         row = get_or_create_survey_row(db, session_id)
-        row.step5_expectation_vs_reality = int(q1)
+        row.step5_disconfirmation_emotion = int(q1)
 
         # Q2: willingness_measurements table holds three measurements
         # per session (info_calibration / Step 5 / Step 7). Phase E:
