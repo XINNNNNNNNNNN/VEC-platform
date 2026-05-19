@@ -47,25 +47,32 @@ dash_app = Dash(
     suppress_callback_exceptions=True,
 )
 
-# Hotfix (state_3 500): turn on dev tools so callback exceptions
-# surface as full Python tracebacks in the uvicorn terminal + an
-# in-browser red banner, instead of being swallowed into a generic
-# 500 Internal Server Error from the Flask error handler.
+# Hotfix v3 (2026-05-19): Hotfix v1's dash_app.enable_dev_tools(
+# debug=True, ...) call broke HTTP serving — every route returned a
+# blank page. Dash's debug mode expects to drive its own Flask dev
+# server via dash_app.run(); calling enable_dev_tools at import time
+# under a FastAPI/Starlette WSGI mount subverts the dispatch path.
 #
-# dev_tools_silence_routes_logging=True keeps the per-request access
-# log readable (otherwise Dash spams every poll/heartbeat). All
-# other tools enabled.
+# Disabled until we have a safe way to surface tracebacks under the
+# Starlette wrapper (likely: a custom Starlette error middleware
+# that catches WSGI exceptions and logs them, instead of relying on
+# Dash dev tools).
 #
-# Production-deployment note: this also enables hot reload of
-# component JS bundles in the browser, which is fine for dogfood +
-# pilot but should be flagged before Render production deployment
-# (Render production should run with debug=False).
-dash_app.enable_dev_tools(
-    debug=True,
-    dev_tools_ui=True,
-    dev_tools_props_check=False,  # noisy, not useful for callback errors
-    dev_tools_serve_dev_bundles=False,
-    dev_tools_hot_reload=False,
-    dev_tools_silence_routes_logging=True,
-    dev_tools_prune_errors=True,
-)
+# When debugging a callback 500 in the meantime, the workflow is:
+#   1. Replicate the failing callback by importing it directly:
+#      `python -c "from vec_platform.pages.step0 import welcome_state3_submit; import traceback
+#                   try: r = welcome_state3_submit(1, '?session_id=...')
+#                   except: traceback.print_exc()"`
+#   2. If the in-process call succeeds but the HTTP request 500s,
+#      the bug is in Dash's callback registration / Output conflict
+#      (check allow_duplicate=True coverage, prevent_initial_call).
+#
+# dash_app.enable_dev_tools(
+#     debug=True,
+#     dev_tools_ui=True,
+#     dev_tools_props_check=False,
+#     dev_tools_serve_dev_bundles=False,
+#     dev_tools_hot_reload=False,
+#     dev_tools_silence_routes_logging=True,
+#     dev_tools_prune_errors=True,
+# )
