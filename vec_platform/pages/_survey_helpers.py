@@ -8,8 +8,10 @@ in the journey (Phase 4-A renumbering applied):
   Step 5 submit  → step5_disconfirmation_emotion (Phase Q-3a)
   Step 6 submit  → step6_broader_impacts_shift
   Step 7 submit  → q1_willingness, q3_concerns, q4_savings_perception, +
-                   q5_trust_source, q6_fairness_pref, q7_transparency_pref,
-                   demographics, drivers_top3, expert_*
+                   trust_municipality, trust_coop, trust_utility,
+                   trust_private, trust_grid, q6_fairness_pref,
+                   data_control_prefs, demographics, drivers_top3,
+                   expert_* (Phase Q-3c)
 
 Whoever runs first creates the row; later writers update it. This module
 exists so the callbacks share the same get-or-create code path and don't
