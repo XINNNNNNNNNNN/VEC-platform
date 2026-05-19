@@ -320,9 +320,15 @@ def step0_layout(session_id: str | None = None):
                 "such a community?",
                 className="form-label fw-bold mb-2",
             ),
+            # Phase Q-3-followup: removed "environment or local grid"
+            # anchor from the 0% endpoint. The previous wording (added
+            # Phase O-fix-13) primed non-economic motivation before
+            # the participant had been given a chance to express it
+            # organically (later via Sloot S1-Q6 + IC-INFO arm). v3
+            # baseline-measurement-in-ignorance principle requires
+            # the Welcome step stays neutral on benefit framing.
             html.Small([
-                "0% = I would join even with no savings — to support "
-                "the environment or the local grid.",
+                "0% = I would join even with no savings.",
                 html.Br(),
                 "50% = I would only join if savings are very high.",
             ], className="text-muted mb-3 d-block"),
