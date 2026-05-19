@@ -1,7 +1,8 @@
 """Device shift and drag log API endpoints."""
 
+import json
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -38,17 +39,23 @@ class DeviceShiftCreate(BaseModel):
     confidence: Optional[int] = None
 
     # v3.6 piggyback fields. The respond page's confirm flow collects a
-    # counter-factual ("if savings were 2x, would you shift more?") and
-    # a perceived-effort question. Same first-shift-only pattern;
-    # backend upserts into survey_responses when step == 5 and both are
-    # present.
+    # counter-factual + a perceived-effort question. Same first-shift-
+    # only pattern; backend upserts into survey_responses when step==5.
     #
-    # Phase 4-A: DB columns renamed step5_* → step4_* (the respond page
-    # is now Step 4 in the 7-step flow). The wire field names retained
-    # the step5_* prefix because they're keyed by the data.step value
-    # (still =5 per decision 2a), and the JS const STEP=5 in step5.js
-    # is preserved per decision 1B. Mapping happens server-side below.
-    step5_q1_counterfactual: Optional[str] = None  # 'yes' / 'no' / 'maybe'
+    # Phase 4-A: DB columns renamed step5_* -> step4_* (the respond page
+    # is now Step 4 in the 7-step flow). The q2 wire field retained the
+    # step5_* prefix because it's keyed by the data.step value (still
+    # =5 per decision 2a), and the JS const STEP=5 in step5.js is
+    # preserved per decision 1B. Mapping happens server-side below.
+    #
+    # Phase Q-3-followup: q1 redesigned from single-select enum
+    # ('yes'/'no'/'maybe') into a conditional per-device reservation-
+    # price list. The wire field is renamed to match the new DB
+    # column name (step4_q1_reconsider_devices). Wire value shape:
+    #   None  -> user has zero willing=False devices (DB write NULL)
+    #   []    -> user picked the "None" sentinel (DB write '[]')
+    #   ["EV", "Oven"] -> reconsider list (DB write JSON-serialized)
+    step4_q1_reconsider_devices: Optional[List[str]] = None
     step5_q2_effort: Optional[str] = None
     # ^ 'easy' / 'acceptable' / 'disruptive' / 'none'
 
@@ -110,25 +117,30 @@ def create_device_shift(
             confidence=data.confidence,
         )
 
-    # v3.6 / Phase 4-A: piggyback the counterfactual + effort answers
-    # from the respond page's confirm flow. Same idempotent pattern:
-    # only writes when step == 5 (preserved data step value), both
-    # fields are sent, and the row doesn't already have the columns
-    # filled. The wire field names use step5_* but the DB columns are
-    # step4_* (renamed in Phase 4-A; the respond page is "Step 4" in
-    # the 7-step flow).
+    # v3.6 / Phase 4-A / Phase Q-3-followup: piggyback the reservation-
+    # price list + effort answers from the respond page's confirm flow.
+    # Same idempotent pattern (always overwrite — Phase E). Gate is now
+    # q2 alone because q1 is legitimately None when the participant
+    # has zero willing=False devices (S4-Q1 card hidden) — gating on
+    # q1 being non-None would drop the q2 write in the all-willing
+    # case.
     if (
         data.step == 5
-        and data.step5_q1_counterfactual is not None
         and data.step5_q2_effort is not None
     ):
         from vec_platform.pages._survey_helpers import get_or_create_survey_row
         row = get_or_create_survey_row(db, data.session_id)
-        # Phase E: always overwrite. Pre-Phase E this only wrote when
-        # both columns were NULL, which silently dropped a participant's
-        # updated counterfactual / effort answer if they pressed Back to
-        # the respond page and resubmitted.
-        row.step4_q1_counterfactual = data.step5_q1_counterfactual
+        # q1: None -> DB NULL (no willing=False devices, question
+        # didn't apply); list -> JSON-serialized (including [] for
+        # the "None" sentinel — distinguishable from NULL because
+        # it means the user saw the question and explicitly picked
+        # "wouldn't change my mind for any of these").
+        if data.step4_q1_reconsider_devices is None:
+            row.step4_q1_reconsider_devices = None
+        else:
+            row.step4_q1_reconsider_devices = json.dumps(
+                list(data.step4_q1_reconsider_devices)
+            )
         row.step4_q2_effort = data.step5_q2_effort
 
     db.commit()

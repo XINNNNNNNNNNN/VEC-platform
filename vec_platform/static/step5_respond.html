@@ -84,19 +84,35 @@
     <!-- v3.6: counterfactual + perceived-effort follow-ups. Asked
          after the participant has dragged devices in response to the
          shadow prices. Both must be answered before Confirm enables. -->
-    <hr/>
-    <div class="card mb-3 counterfactual-card">
-      <div class="card-header"><strong>S4-Q1 · If conditions were different…</strong></div>
+    <!-- Phase Q-3-followup: S4-Q1 redesigned from single-multiplier
+         elasticity question into conditional per-device reservation-
+         price elicitation. Card is hidden (display:none) by default;
+         JS reveals it only if the user has at least one device with
+         willing=False after Step 4 drag interactions. Device list
+         is populated dynamically from state.willingness at gate-
+         setup time. -->
+    <hr id="step5-reconsider-divider" style="display: none;"/>
+    <div class="card mb-3 reconsider-card" id="step5-reconsider-card"
+         style="display: none;">
+      <div class="card-header"><strong>S4-Q1 · If savings were higher…</strong></div>
       <div class="card-body">
         <h5 class="mb-3">
-          If the savings from shifting your devices were
-          <strong>twice</strong> what you saw, would you change more
-          devices?
+          You said you would NOT shift some devices. If the savings
+          were <strong>higher</strong> than what you saw, would you
+          change your mind about any of them?
         </h5>
-        <div class="likert-group">
-          <label><input type="radio" name="step5-q1-counterfactual" value="yes"/> Yes, I'd shift more</label>
-          <label><input type="radio" name="step5-q1-counterfactual" value="no"/> No, I'd still keep my current routine</label>
-          <label><input type="radio" name="step5-q1-counterfactual" value="maybe"/> Maybe, depending on which devices</label>
+        <p class="text-muted small mb-2">
+          (select all you would reconsider, or pick "None")
+        </p>
+        <div class="reconsider-group" id="step5-reconsider-list">
+          <!-- Dynamic device checkboxes injected by step5.js -->
+        </div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox"
+                 id="step5-reconsider-none" value="__none__">
+          <label class="form-check-label" for="step5-reconsider-none">
+            None — savings level wouldn't change my mind for any of these
+          </label>
         </div>
       </div>
     </div>

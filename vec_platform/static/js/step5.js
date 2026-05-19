@@ -486,6 +486,10 @@
     // defaulted to true, every yes/no click flips the all-devices-answered
     // condition and may enable/disable Submit.
     updateConfirmEnabled();
+    // Phase Q-3-followup: rebuild reconsider list since willing
+    // state just changed (this device may have just become a
+    // willing=false candidate, or stopped being one).
+    populateReconsiderList();
   }
 
   function toggleReason(name, reason, on) {
@@ -695,6 +699,11 @@
     renderTimeline();
     renderDeviceCards();
     refreshChart();
+    // Phase Q-3-followup: build the reconsider list from current
+    // willingness state. On fresh load every device has willing=null,
+    // so the list will be empty and the card stays hidden until the
+    // user picks at least one "I will not shift this".
+    populateReconsiderList();
   }
 
   async function loadReferenceBills() {
@@ -713,11 +722,36 @@
   }
 
   // v3.6 helpers — Step 5 counterfactual + perceived-effort questions.
+  // Phase Q-3-followup: q1 redesigned from single-radio counterfactual
+  // to conditional multi-select reservation-price list. Return shape
+  // for q1:
+  //   null  -> S4-Q1 card hidden (user has zero willing=False devices)
+  //   []    -> user has willing=False devices but reconsiders NONE
+  //            (picked the "None" sentinel checkbox)
+  //   ["EV", "Oven"] -> user reconsiders these devices
   function getCounterfactualAnswers() {
-    const q1El = document.querySelector('input[name="step5-q1-counterfactual"]:checked');
+    const cardVisible = document.getElementById("step5-reconsider-card")
+                                ?.style.display !== "none";
+    let q1;
+    if (!cardVisible) {
+      q1 = null;
+    } else {
+      const noneChecked = document.getElementById(
+        "step5-reconsider-none"
+      )?.checked;
+      if (noneChecked) {
+        q1 = [];
+      } else {
+        const checked = document.querySelectorAll(
+          'input[name="step5-reconsider-device"]:checked'
+        );
+        const picks = Array.from(checked).map((c) => c.value);
+        q1 = picks.length > 0 ? picks : null;  // null = not yet answered
+      }
+    }
     const q2El = document.querySelector('input[name="step5-q2-effort"]:checked');
     return {
-      q1: q1El ? q1El.value : null,
+      q1: q1,
       q2: q2El ? q2El.value : null,
     };
   }
@@ -739,17 +773,107 @@
     const allDevicesAnswered =
       willEntries.length > 0 &&
       willEntries.every((w) => w.willing === true || w.willing === false);
+    // Phase Q-3-followup: q1 may legitimately be null when the
+    // reservation-price card is hidden (zero willing=False devices).
+    // In that case "answered" means "not applicable" — gate passes.
+    // When the card is visible q1 is either [] (None picked) or a
+    // non-empty array; both are "answered". The only NOT-answered
+    // state is card visible AND no checkboxes ticked AND None not
+    // ticked → getCounterfactualAnswers returns null.
+    const cardEl = document.getElementById("step5-reconsider-card");
+    const cardVisible = cardEl?.style.display !== "none";
+    const q1Answered = !cardVisible || q1 !== null;
     const btn = $("btn-confirm");
-    if (btn) btn.disabled = !(q1 && q2 && allDevicesAnswered);
+    if (btn) btn.disabled = !(q1Answered && q2 && allDevicesAnswered);
+  }
+
+  function populateReconsiderList() {
+    // Phase Q-3-followup: build the conditional reservation-price
+    // checkbox list from state.willingness (set by the user's
+    // step-4 per-device willing radios). Devices with willing=false
+    // become checkboxes; the card is shown only if length > 0.
+    const listEl = document.getElementById("step5-reconsider-list");
+    const cardEl = document.getElementById("step5-reconsider-card");
+    const divEl = document.getElementById("step5-reconsider-divider");
+    if (!listEl || !cardEl) return;
+
+    const unwillingDevices = Object.entries(state.willingness)
+      .filter(([, w]) => w.willing === false)
+      .map(([name]) => name);
+
+    listEl.innerHTML = "";
+    if (unwillingDevices.length === 0) {
+      // Hide the card entirely; getCounterfactualAnswers returns
+      // null for q1, which the backend will store as DB NULL.
+      cardEl.style.display = "none";
+      if (divEl) divEl.style.display = "none";
+      updateConfirmEnabled();
+      return;
+    }
+
+    cardEl.style.display = "";
+    if (divEl) divEl.style.display = "";
+    // Reset the "None" sentinel when the list rebuilds — stale checks
+    // from a previous willing=false set could otherwise misrepresent
+    // the current device selection.
+    const noneEl = document.getElementById("step5-reconsider-none");
+    if (noneEl) noneEl.checked = false;
+
+    unwillingDevices.forEach((name) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "form-check";
+      wrapper.innerHTML = `
+        <input class="form-check-input reconsider-device-cb"
+               type="checkbox"
+               name="step5-reconsider-device"
+               id="step5-reconsider-dev-${name}"
+               value="${name}">
+        <label class="form-check-label"
+               for="step5-reconsider-dev-${name}">
+          Yes, I'd reconsider shifting ${name}
+        </label>`;
+      listEl.appendChild(wrapper);
+    });
+
+    // Wire up checkbox interactions:
+    // - Device checkboxes: enable Submit gate when at least one is
+    //   ticked OR the "None" sentinel is ticked. Mutual exclusion
+    //   between device checks and "None" — checking "None" unchecks
+    //   all device picks; checking a device unchecks "None".
+    const deviceChecks = listEl.querySelectorAll(".reconsider-device-cb");
+
+    deviceChecks.forEach((cb) => {
+      cb.addEventListener("change", () => {
+        if (cb.checked && noneEl) noneEl.checked = false;
+        updateConfirmEnabled();
+      });
+    });
+    if (noneEl) {
+      noneEl.addEventListener("change", () => {
+        if (noneEl.checked) {
+          deviceChecks.forEach((c) => (c.checked = false));
+        }
+        updateConfirmEnabled();
+      });
+    }
+    updateConfirmEnabled();
   }
 
   function setupCounterfactualGate() {
+    // Phase Q-3-followup: q2 still uses radios; q1 (reconsider list)
+    // is wired up inside populateReconsiderList because the DOM
+    // doesn't exist until that runs.
     document.querySelectorAll(
-      'input[name="step5-q1-counterfactual"], input[name="step5-q2-effort"]'
+      'input[name="step5-q2-effort"]'
     ).forEach((radio) => {
       radio.addEventListener("change", updateConfirmEnabled);
     });
-    updateConfirmEnabled();  // initial state (both null → disabled)
+    // populateReconsiderList is called from loadInitial AFTER the
+    // user's per-device willingness state is restored from prior
+    // step-5 visits / current session — calling it here would
+    // populate an empty list on initial load before willingness
+    // is known.
+    updateConfirmEnabled();
   }
 
   // ---- Buttons ----
@@ -770,6 +894,10 @@
       // for every device (renderDeviceCards rebuilt unchecked radios but
       // doesn't touch the button's disabled attribute).
       updateConfirmEnabled();
+      // Phase Q-3-followup: clear the reconsider list since all
+      // willingness state was just nuked (will rebuild empty +
+      // hide the card).
+      populateReconsiderList();
     });
 
     $("btn-confirm").addEventListener("click", async () => {
@@ -779,8 +907,15 @@
 
       // Defensive: button is disabled until both Qs are answered, but
       // re-check in case of synthetic clicks.
+      // Phase Q-3-followup: cf_q1 may be null (card hidden = no
+      // willing=False devices = N/A), [] (None sentinel checked),
+      // or non-empty array. The valid "not answered" state is
+      // ONLY: card visible AND cf_q1 === null. Reuse the gate's
+      // logic by querying card visibility.
       const { q1: cf_q1, q2: cf_q2 } = getCounterfactualAnswers();
-      if (!cf_q1 || !cf_q2) {
+      const reconsiderCard = document.getElementById("step5-reconsider-card");
+      const reconsiderVisible = reconsiderCard?.style.display !== "none";
+      if ((reconsiderVisible && cf_q1 === null) || !cf_q2) {
         if (errEl) errEl.textContent = "Please answer both questions about your experience.";
         return;
       }
@@ -829,7 +964,10 @@
             unwilling_reason: reasons,
           };
           if (!firstShiftSent) {
-            payload.step5_q1_counterfactual = cf_q1;
+            // Phase Q-3-followup: q1 is now a JSON list (or null) per
+            // reservation-price redesign. Pass through as-is; backend
+            // JSON-serializes to TEXT column.
+            payload.step4_q1_reconsider_devices = cf_q1;
             payload.step5_q2_effort = cf_q2;
             firstShiftSent = true;
           }
