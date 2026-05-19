@@ -393,15 +393,41 @@ class SurveyResponse(Base):
     # block entirely — all participants answer the same questions; RQ7
     # expert-vs-lay analysis is computed post-hoc from
     # composite_expertise_z = z(vec_familiarity) + z(occupation).)
-    q5_trust_source: Mapped[Optional[str]] = mapped_column(
-        String(32), nullable=True,
-    )  # 'government' / 'utility' / 'coop' / 'tech' / 'none'
+    # Phase Q-3c — REMOVED q5_trust_source. The v3 redesign replaces
+    # the single-select trust question with a 5-rating Likert battery
+    # (trust_municipality / trust_coop / trust_utility / trust_private
+    # / trust_grid) for SEM latent trust orientation. See alembic
+    # migration phase_q3c_trust_5_ratings_and_data_control_multiselect.
+    trust_municipality: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )  # 1=No trust .. 5=Complete trust
+    trust_coop: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    trust_utility: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    trust_private: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    trust_grid: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     q6_fairness_pref: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'equal' / 'proportional' / 'needs' / 'unsure'
-    q7_transparency_pref: Mapped[Optional[str]] = mapped_column(
-        String(16), nullable=True,
-    )  # 'minimal' / 'summary' / 'detailed' / 'full'
+
+    # Phase Q-3c — REMOVED q7_transparency_pref. The v3 redesign
+    # replaces the single-Likert transparency question with a multi-
+    # select data sovereignty question. Stored as JSON list of
+    # selected option keys ('own_usage' / 'agg_community' /
+    # 'anon_others' / 'decide_share' / 'delete_anytime' /
+    # 'no_detailed'). Stronger Ei policy implication than the
+    # transparency Likert.
+    data_control_prefs: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+    )
     demo_age_range: Mapped[Optional[str]] = mapped_column(
         String(8), nullable=True,
     )  # '18-29' / '30-39' / '40-49' / '50-59' / '60-69' / '70+'
