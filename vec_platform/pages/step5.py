@@ -13,10 +13,11 @@ questions at the bottom:
 
   Q1 disappointment vs expectation — 5-point Likert, persisted on
      survey_responses.step5_expectation_vs_reality
-  Q2 would-you-consider Likert — 5-point, persisted as
-     willingness_measurements(round=2, scale_type='5point_consider')
-     to keep all three willingness measurements (info_calibration /
-     Step 5 / Step 7) in one uniform table
+  Q2 how-likely Likert — 5-point, persisted as
+     willingness_measurements(round=2, scale_type='5point_likely').
+     Phase Q-2b standardized this anchor across all three measurement
+     rounds (info_calibration / Step 5 / Step 7) so cross-round
+     comparison is statistically paired.
 
 Importing this module registers two Dash callbacks against ``dash_app``.
 """
@@ -351,17 +352,17 @@ def step5_layout(session_id: str | None):
         dbc.Card([
             dbc.CardBody([
                 html.H4(
-                    "S5-Q3 · Now that you've seen the comparison, would you consider "
-                    "joining a VEC?"
+                    "S5-Q3 · Now that you've seen the comparison, how likely "
+                    "are you to join a VEC?"
                 ),
                 dcc.RadioItems(
                     id="step5-consider-willingness",
                     options=[
-                        {"label": "1 — Definitely not",   "value": 1},
-                        {"label": "2 — Probably not",     "value": 2},
-                        {"label": "3 — Maybe",            "value": 3},
-                        {"label": "4 — Probably yes",     "value": 4},
-                        {"label": "5 — Definitely yes",   "value": 5},
+                        {"label": "1 — Very unlikely",      "value": 1},
+                        {"label": "2 — Somewhat unlikely",  "value": 2},
+                        {"label": "3 — Undecided",          "value": 3},
+                        {"label": "4 — Somewhat likely",    "value": 4},
+                        {"label": "5 — Very likely",        "value": 5},
                     ],
                     value=None,
                     labelStyle={"display": "block", "padding": "0.3rem 0"},
@@ -441,10 +442,14 @@ def submit_step5(n_clicks, q1, q2, search):
         # switched from defensive-idempotency (which silently dropped
         # the new value on resubmit) to an explicit upsert that records
         # the participant's latest answer.
+        # Phase Q-2b: scale_type standardized to '5point_likely' across
+        # all three rounds. Widget id step5-consider-willingness kept
+        # for callback graph stability; semantic is now 'how likely'
+        # not 'consider'.
         upsert_willingness(
             db, session_id,
             round_=2,
-            scale_type="5point_consider",
+            scale_type="5point_likely",
             value=q2,
         )
 
