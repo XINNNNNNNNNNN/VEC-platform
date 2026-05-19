@@ -381,11 +381,36 @@ def _survey_form(session_id: str) -> html.Div:
             ),
         ]), className="mb-3"),
 
-        # ----- exit threshold -----
+        # ----- S7 exit-dimension transition framing (Phase Q-3e-wording-pass) -----
+        # Three questions ahead measure three distinct dimensions of
+        # exit decision: WHERE (severity, Q9), WHEN (duration, Q10),
+        # HOW (Hirschman reaction pattern, Q11). The Alert below makes
+        # this explicit to avoid the participant feeling the three
+        # questions are repetitive.
+        dbc.Alert(
+            [
+                html.Strong("Now we'd like to understand how you'd react "
+                            "if a VEC underperformed."),
+                html.Br(), html.Br(),
+                "Three questions on three different things:",
+                html.Ul([
+                    html.Li("how bad it would need to get  (S7-Q9)"),
+                    html.Li("how long you'd give it  (S7-Q10)"),
+                    html.Li("how you'd react in the meantime  (S7-Q11)"),
+                ], className="mb-0 mt-2"),
+            ],
+            color="info",
+            className="mb-3",
+        ),
+
+        # ----- S7-Q9 exit threshold (WHERE — severity) -----
+        # Phase Q-3e-wording-pass: title reworded to emphasize the
+        # "at what point of underperformance" framing, distinct from
+        # Q10 (duration) and Q11 (reaction pattern). Body text and
+        # widget id (step7-exit-threshold) preserved.
         _radio_card(
-            "S7-Q9 · Imagine you joined a VEC and during the first months your "
-            "actual savings turn out to be lower than what you originally "
-            "expected. At what point would you consider leaving?",
+            "S7-Q9 · At what point of underperformance would you "
+            "consider leaving the VEC?",
             "step7-exit-threshold", _EXIT_OPTIONS,
         ),
 
@@ -395,9 +420,16 @@ def _survey_form(session_id: str) -> html.Div:
         # The -1 "Never leave" value is right-censored in the hazard
         # model; the analysis pipeline handles this convention.
         dbc.Card(dbc.CardBody([
+            # Phase Q-3e-wording-pass: removed the artificial "50% of
+            # promised" anchor that confused participants (they had
+            # just answered Q9 with their own threshold). Verbal
+            # back-reference only — no callback-level dynamic
+            # substitution; the previous answer is in the participant's
+            # short-term memory from Q9 directly above.
             html.H4(
-                "S7-Q10 · If savings stayed at 50% of promised, how "
-                "many months would you give the community before leaving?"
+                "S7-Q10 · If savings turned out lower than the level "
+                "you'd require (your previous answer), how many months "
+                "would you give the community before leaving?"
             ),
             dcc.RadioItems(
                 id="step7-q10-exit-lag",
@@ -413,10 +445,14 @@ def _survey_form(session_id: str) -> html.Div:
         # Submit-gate enforces a unique permutation; submit handler
         # validates again (defensive).
         dbc.Card(dbc.CardBody([
+            # Phase Q-3e-wording-pass: title reworded to emphasize
+            # "in the meantime — how would you express your reaction"
+            # framing (Hirschman 1970 4-reaction pattern), distinct
+            # from Q9 (severity) and Q10 (duration).
             html.H4(
-                "S7-Q11 · If savings fell short of what you expected, "
-                "what would you do? Rank these 1 (most likely) to "
-                "4 (least likely) — use each number once."
+                "S7-Q11 · In the meantime — how would you express "
+                "your reaction? Rank these 1 (most likely) to 4 "
+                "(least likely) — use each number once."
             ),
             *[
                 html.Div([
