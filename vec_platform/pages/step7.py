@@ -132,7 +132,12 @@ _EXIT_LAG_OPTIONS = [
     {"label": "3 months", "value": 3},
     {"label": "6 months", "value": 6},
     {"label": "12 months", "value": 12},
-    {"label": "Never leave", "value": -1},
+    # Phase Q-3e-redesign: "Never leave" reworded to "Indefinitely" —
+    # in the yellow-zone framing the participant has already declared
+    # in Q9 they wouldn't leave at this severity, so "never leave"
+    # is redundant; "Indefinitely" reads as "I'd wait as long as it
+    # takes" within the yellow zone. DB value -1 unchanged.
+    {"label": "Indefinitely", "value": -1},
 ]
 
 # Phase Q-3e: S7-Q11 Hirschman rank. 4 reaction types from Hirschman
@@ -141,11 +146,18 @@ _EXIT_LAG_OPTIONS = [
 # .. 4=least likely. Submitted as a permutation of {1,2,3,4} — the
 # submit handler enforces uniqueness. Persisted to four
 # exit_thresholds.hirschman_*_rank columns.
+# Phase Q-3e-redesign: 'exit' rank dropped (S7-Q9 already captures
+# the exit decision); 'constructive' rank added to capture "stay
+# actively engaged for grid / environment benefit even when savings
+# disappoint" — wait-period behavior measurement, distinct from
+# Sloot S1-Q6 trait measurement (Sloot asks 'usually value X';
+# this asks 'under stress, still engage'). 4-rank permutation
+# invariant preserved.
 _HIRSCHMAN_TARGETS = [
-    ("exit",    "Leave (exit)"),
-    ("voice",   "Stay but raise the issue (voice)"),
-    ("loyalty", "Wait and give it more time (loyalty)"),
-    ("passive", "Reduce involvement but stay (passive)"),
+    ("voice",        "Stay but raise the issue with the operator or community (voice)"),
+    ("loyalty",      "Wait quietly, give it more time (loyalty)"),
+    ("passive",      "Reduce my involvement but stay (passive)"),
+    ("constructive", "Stay actively engaged for grid / environment benefit, even though savings disappoint (constructive)"),
 ]
 _HIRSCHMAN_RANK_OPTIONS = [
     {"label": "1 (most likely)", "value": 1},
@@ -381,55 +393,31 @@ def _survey_form(session_id: str) -> html.Div:
             ),
         ]), className="mb-3"),
 
-        # ----- S7 exit-dimension transition framing (Phase Q-3e-wording-pass) -----
-        # Three questions ahead measure three distinct dimensions of
-        # exit decision: WHERE (severity, Q9), WHEN (duration, Q10),
-        # HOW (Hirschman reaction pattern, Q11). The Alert below makes
-        # this explicit to avoid the participant feeling the three
-        # questions are repetitive.
-        dbc.Alert(
-            [
-                html.Strong("Now we'd like to understand how you'd react "
-                            "if a VEC underperformed."),
-                html.Br(), html.Br(),
-                "Three questions on three different things:",
-                html.Ul([
-                    html.Li("how bad it would need to get  (S7-Q9)"),
-                    html.Li("how long you'd give it  (S7-Q10)"),
-                    html.Li("how you'd react in the meantime  (S7-Q11)"),
-                ], className="mb-0 mt-2"),
-            ],
-            color="info",
-            className="mb-3",
-        ),
-
-        # ----- S7-Q9 exit threshold (WHERE — severity) -----
-        # Phase Q-3e-wording-pass: title reworded to emphasize the
-        # "at what point of underperformance" framing, distinct from
-        # Q10 (duration) and Q11 (reaction pattern). Body text and
-        # widget id (step7-exit-threshold) preserved.
+        # ----- S7-Q9 RED LINE (Phase Q-3e-redesign) -----
+        # Q-3e-wording-pass added an info-Alert preview of Q9/Q10/Q11.
+        # Q-3e-redesign removes the Alert because the three questions
+        # are now logically distinct (RED LINE / YELLOW ZONE PATIENCE
+        # / YELLOW ZONE BEHAVIOR) — no preview needed. Q9 title
+        # emphasizes "immediately" to anchor the red-line semantic.
         _radio_card(
             "S7-Q9 · At what point of underperformance would you "
-            "consider leaving the VEC?",
+            "leave the VEC IMMEDIATELY?",
             "step7-exit-threshold", _EXIT_OPTIONS,
         ),
 
-        # ----- S7-Q10 Time-to-Exit (Phase Q-3e) -----
-        # Temporal horizon for exit. Pairs with S7-Q9 threshold ratio
-        # for Cox proportional-hazards analysis (RQ5 Analysis 2).
-        # The -1 "Never leave" value is right-censored in the hazard
-        # model; the analysis pipeline handles this convention.
+        # ----- S7-Q10 YELLOW ZONE PATIENCE (Phase Q-3e-redesign) -----
+        # Operates in the gap between "what you expected" and Q9's
+        # red line — i.e., savings are disappointing but haven't
+        # crossed the immediate-exit threshold. Measures how long the
+        # participant would wait before exit becomes the choice.
+        # Cox proportional-hazards model (RQ5 Analysis 2) uses this
+        # as the duration variable, with Q9 threshold as covariate.
         dbc.Card(dbc.CardBody([
-            # Phase Q-3e-wording-pass: removed the artificial "50% of
-            # promised" anchor that confused participants (they had
-            # just answered Q9 with their own threshold). Verbal
-            # back-reference only — no callback-level dynamic
-            # substitution; the previous answer is in the participant's
-            # short-term memory from Q9 directly above.
             html.H4(
-                "S7-Q10 · If savings turned out lower than the level "
-                "you'd require (your previous answer), how many months "
-                "would you give the community before leaving?"
+                "S7-Q10 · Now imagine savings stay BETTER than your "
+                "red line from the last question, but still WORSE "
+                "than what you expected. How long would you wait "
+                "before leaving?"
             ),
             dcc.RadioItems(
                 id="step7-q10-exit-lag",
@@ -439,20 +427,18 @@ def _survey_form(session_id: str) -> html.Div:
             ),
         ]), className="mb-3"),
 
-        # ----- S7-Q11 Hirschman Rank (Phase Q-3e) -----
-        # 4 reaction types ranked 1=most likely .. 4=least likely.
-        # The grid is 4 rows; each row has an inline 1/2/3/4 selector.
-        # Submit-gate enforces a unique permutation; submit handler
-        # validates again (defensive).
+        # ----- S7-Q11 YELLOW ZONE BEHAVIOR (Phase Q-3e-redesign) -----
+        # Captures behavior during the Q10 wait period. 4 reactions
+        # (voice / loyalty / passive / constructive) ranked 1-4.
+        # The 'constructive' option (added in Q-3e-redesign) captures
+        # the non-exit pro-engagement pattern Hirschman 1970 didn't
+        # explicitly name but is common in energy-community studies
+        # (Bauwens et al. 2016 cooperative engagement).
         dbc.Card(dbc.CardBody([
-            # Phase Q-3e-wording-pass: title reworded to emphasize
-            # "in the meantime — how would you express your reaction"
-            # framing (Hirschman 1970 4-reaction pattern), distinct
-            # from Q9 (severity) and Q10 (duration).
             html.H4(
-                "S7-Q11 · In the meantime — how would you express "
-                "your reaction? Rank these 1 (most likely) to 4 "
-                "(least likely) — use each number once."
+                "S7-Q11 · During that waiting period — how would you "
+                "behave? Rank these 1 (most likely) to 4 (least "
+                "likely) — use each number once."
             ),
             *[
                 html.Div([
@@ -643,17 +629,16 @@ def warn_drivers_max(values):
 
 @dash_app.callback(
     Output("step7-hirschman-warn", "children"),
-    Input("step7-hirschman-exit", "value"),
     Input("step7-hirschman-voice", "value"),
     Input("step7-hirschman-loyalty", "value"),
     Input("step7-hirschman-passive", "value"),
+    Input("step7-hirschman-constructive", "value"),
 )
-def warn_hirschman_duplicate(r_exit, r_voice, r_loyalty, r_passive):
-    """Phase Q-3e: live warning when the 4 Hirschman ranks aren't a
-    valid permutation of {1,2,3,4}. The submit gate also enforces
-    uniqueness (defensive); this surfaces the issue to the user
-    before they try to submit."""
-    ranks = [r_exit, r_voice, r_loyalty, r_passive]
+def warn_hirschman_duplicate(r_voice, r_loyalty, r_passive, r_constructive):
+    """Phase Q-3e-redesign: 'exit' rank dropped, 'constructive' added.
+    Live warning when the 4 ranks aren't a valid permutation of
+    {1,2,3,4}. Submit gate also enforces uniqueness (defensive)."""
+    ranks = [r_voice, r_loyalty, r_passive, r_constructive]
     filled = [r for r in ranks if r is not None]
     if len(filled) == 4 and len(set(filled)) != 4:
         return "Please assign each rank (1, 2, 3, 4) exactly once."
@@ -675,10 +660,12 @@ def warn_hirschman_duplicate(r_exit, r_voice, r_loyalty, r_passive):
     Input("step7-q8-entry-confidence", "value"),
     Input("step7-exit-threshold", "value"),
     Input("step7-q10-exit-lag", "value"),
-    Input("step7-hirschman-exit", "value"),
+    # Phase Q-3e-redesign: dropped hirschman-exit input, added
+    # hirschman-constructive input. 4-Input count unchanged.
     Input("step7-hirschman-voice", "value"),
     Input("step7-hirschman-loyalty", "value"),
     Input("step7-hirschman-passive", "value"),
+    Input("step7-hirschman-constructive", "value"),
     Input("step7-final-willingness", "value"),
     Input("step7-demo-age", "value"),
     Input("step7-demo-gender", "value"),
@@ -689,7 +676,7 @@ def toggle_step7_submit(q1, q4,
                        q6_fair, data_control,
                        entry_touched, q8_conf,
                        exit_t, exit_lag,
-                       h_exit, h_voice, h_loyalty, h_passive,
+                       h_voice, h_loyalty, h_passive, h_constructive,
                        final_w, age, gender, drivers):
     """Lock Submit until every required question has a value.
 
@@ -720,7 +707,7 @@ def toggle_step7_submit(q1, q4,
     required = [q1, q4, q6_fair, exit_t, final_w, age, gender,
                 t_muni, t_coop, t_util, t_priv, t_grid,
                 exit_lag,
-                h_exit, h_voice, h_loyalty, h_passive]
+                h_voice, h_loyalty, h_passive, h_constructive]
     if any(v is None for v in required):
         return True
     if not entry_touched:
@@ -729,7 +716,7 @@ def toggle_step7_submit(q1, q4,
         return True
     if not data_control:
         return True
-    hirschman_ranks = [h_exit, h_voice, h_loyalty, h_passive]
+    hirschman_ranks = [h_voice, h_loyalty, h_passive, h_constructive]
     if len(set(hirschman_ranks)) != 4:
         return True
     n = len(drivers or [])
@@ -765,11 +752,12 @@ def toggle_step7_submit(q1, q4,
     State("step7-exit-threshold", "value"),
     # Phase Q-3e — S7-Q10 Time-to-Exit.
     State("step7-q10-exit-lag", "value"),
-    # Phase Q-3e — S7-Q11 Hirschman rank (4 components).
-    State("step7-hirschman-exit", "value"),
+    # Phase Q-3e + Q-3e-redesign — S7-Q11 wait-period behavior rank
+    # (4 components: voice/loyalty/passive/constructive).
     State("step7-hirschman-voice", "value"),
     State("step7-hirschman-loyalty", "value"),
     State("step7-hirschman-passive", "value"),
+    State("step7-hirschman-constructive", "value"),
     State("step7-final-willingness", "value"),
     State("step7-demo-age", "value"),
     State("step7-demo-gender", "value"),
@@ -783,7 +771,7 @@ def submit_survey(n_clicks, q1, q3, q4,
                   q6_fair, data_control,
                   entry_pct, entry_touched, q8_conf, exit_t,
                   exit_lag,
-                  h_exit, h_voice, h_loyalty, h_passive,
+                  h_voice, h_loyalty, h_passive, h_constructive,
                   final_w,
                   age, gender, country,
                   drivers,
@@ -815,7 +803,7 @@ def submit_survey(n_clicks, q1, q3, q4,
     required = [q1, q4, q6_fair, exit_t, final_w, age, gender,
                 t_muni, t_coop, t_util, t_priv, t_grid,
                 exit_lag,
-                h_exit, h_voice, h_loyalty, h_passive]
+                h_voice, h_loyalty, h_passive, h_constructive]
     if any(v is None for v in required):
         return no_update, "Please answer all required questions."
     if not entry_touched:
@@ -824,7 +812,7 @@ def submit_survey(n_clicks, q1, q3, q4,
         return no_update, "Please answer S7-Q8 — how sure you are about the threshold you just set."
     if not data_control:
         return no_update, "Please select at least one data-control option for S7-Q6."
-    hirschman_ranks = [h_exit, h_voice, h_loyalty, h_passive]
+    hirschman_ranks = [h_voice, h_loyalty, h_passive, h_constructive]
     if len(set(hirschman_ranks)) != 4:
         return no_update, "Please rank each S7-Q11 option with a different number from 1 to 4."
     drivers_count = len(drivers or [])
@@ -889,10 +877,11 @@ def submit_survey(n_clicks, q1, q3, q4,
         et.entry_threshold_pct = float(entry_pct)
         et.entry_threshold_decision_confidence = int(q8_conf)
         et.exit_lag_months = int(exit_lag)
-        et.hirschman_exit_rank = int(h_exit)
+        # Phase Q-3e-redesign: write 4 ranks to the new column set.
         et.hirschman_voice_rank = int(h_voice)
         et.hirschman_loyalty_rank = int(h_loyalty)
         et.hirschman_passive_rank = int(h_passive)
+        et.hirschman_constructive_rank = int(h_constructive)
 
         # 3) willingness_measurements round=3. Phase E: switched from
         # defensive-idempotency to an explicit upsert so a participant
