@@ -348,13 +348,19 @@ class SurveyResponse(Base):
         String(16), nullable=True,
     )  # 'easy' / 'acceptable' / 'disruptive' / 'none'
 
-    # v3.7 — Step 5 compare-page disappointment Likert (renamed from
-    # step6_* in Phase 4-A). 1=much less than expected .. 5=much more.
+    # v3.7 → Phase Q-3a — Step 5 compare-page Likert. The v3 redesign
+    # changed this from a cognitive comparison ('how does actual
+    # compare to expected?', 1=much less .. 5=much more) to an
+    # emotional reaction ('how do you feel about this result?',
+    # 1=very disappointed .. 5=very pleased) per Oliver (1980)
+    # expectation-disconfirmation theory. The platform now DISPLAYS
+    # both numbers (estimated X%, actual Y%) so the user reacts
+    # emotionally rather than performing arithmetic.
     # The companion 5-point "how likely are you to join?" Likert lives
     # in willingness_measurements with round=2 (kept in that table to
     # keep all three willingness measurements — info_calibration /
     # Step 5 / Step 7 — uniform).
-    step5_expectation_vs_reality: Mapped[Optional[int]] = mapped_column(
+    step5_disconfirmation_emotion: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True,
     )
 
