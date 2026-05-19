@@ -46,3 +46,26 @@ dash_app = Dash(
     external_stylesheets=[dbc.themes.BOOTSTRAP],
     suppress_callback_exceptions=True,
 )
+
+# Hotfix (state_3 500): turn on dev tools so callback exceptions
+# surface as full Python tracebacks in the uvicorn terminal + an
+# in-browser red banner, instead of being swallowed into a generic
+# 500 Internal Server Error from the Flask error handler.
+#
+# dev_tools_silence_routes_logging=True keeps the per-request access
+# log readable (otherwise Dash spams every poll/heartbeat). All
+# other tools enabled.
+#
+# Production-deployment note: this also enables hot reload of
+# component JS bundles in the browser, which is fine for dogfood +
+# pilot but should be flagged before Render production deployment
+# (Render production should run with debug=False).
+dash_app.enable_dev_tools(
+    debug=True,
+    dev_tools_ui=True,
+    dev_tools_props_check=False,  # noisy, not useful for callback errors
+    dev_tools_serve_dev_bundles=False,
+    dev_tools_hot_reload=False,
+    dev_tools_silence_routes_logging=True,
+    dev_tools_prune_errors=True,
+)
