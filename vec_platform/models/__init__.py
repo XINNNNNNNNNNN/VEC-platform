@@ -521,6 +521,35 @@ class ExitThreshold(Base):
         Integer, nullable=True,
     )
 
+    # Phase Q-3e — S7-Q10 Time-to-Exit. The horizon in months before
+    # the participant would leave a VEC whose savings stay at 50% of
+    # what was promised. Values: 1/3/6/12 (literal months); -1 =
+    # "Never leave" (right-censored for Cox-hazard analysis); NULL =
+    # pre-Q-3e session or unanswered.
+    exit_lag_months: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
+    # Phase Q-3e — S7-Q11 Hirschman (1970) rank. The participant ranks
+    # 4 possible reactions to a VEC that fell short of expectations,
+    # 1=most likely .. 4=least likely. Submitted as a permutation of
+    # {1,2,3,4} per session — the submit handler validates uniqueness
+    # before persisting. NULLs only on pre-Q-3e rows / partial
+    # submissions. Rank-ordered logit (RQ5 Analysis 3) consumes the 4
+    # columns jointly.
+    hirschman_exit_rank: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    hirschman_voice_rank: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    hirschman_loyalty_rank: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+    hirschman_passive_rank: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True,
+    )
+
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False,
     )
