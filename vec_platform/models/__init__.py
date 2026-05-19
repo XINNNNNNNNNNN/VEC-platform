@@ -341,9 +341,16 @@ class SurveyResponse(Base):
     # follow-ups (renamed from step5_* in Phase 4-A). Asked after the
     # participant has dragged devices in response to shadow prices;
     # piggybacked on the first device-shift POST.
-    step4_q1_counterfactual: Mapped[Optional[str]] = mapped_column(
-        String(16), nullable=True,
-    )  # 'yes' / 'no' / 'maybe'
+    # Phase Q-3-followup: replaced step4_q1_counterfactual (was enum
+    # 'yes'/'no'/'maybe') with conditional per-device reservation-
+    # price list. Stores JSON-encoded list of device names the user
+    # would reconsider shifting if savings were higher (e.g.,
+    # '["Oven", "Heat pump"]'). Empty list '[]' = user has at least
+    # one willing=False device but reconsiders none. NULL = user
+    # has zero willing=False devices (question hidden).
+    step4_q1_reconsider_devices: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+    )
     step4_q2_effort: Mapped[Optional[str]] = mapped_column(
         String(16), nullable=True,
     )  # 'easy' / 'acceptable' / 'disruptive' / 'none'
