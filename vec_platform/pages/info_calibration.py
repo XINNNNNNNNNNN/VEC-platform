@@ -9,10 +9,11 @@ Phase P-1 redesign. The page now has three sections in a fixed order:
      Arm A — optimistic anchor ("15–20%").
      Arm B — realistic anchor ("3–7%").
      Arm C — control: explicit "varies / limited data" copy, no number.
-  3. 5-point interest Likert. Phase P-1 narrowed the prior 7-point scale
-     to 5 levels with explicit labels at every step so the scale_type
-     change is visible in DB queries. Persisted with
-     scale_type='5point_interest' (was '7point_interest').
+  3. 5-point 'how likely' Likert. Phase Q-2b standardized this anchor
+     across all three willingness measurement rounds (IC-Q1 / S5-Q3 /
+     S7-Q1) so the rounds are directly paired in analysis. Persisted
+     with scale_type='5point_likely' (was '5point_interest' in P-1,
+     '7point_interest' before that).
 
 Arm assignment is set at session creation in ``main.root`` and is read
 from ``sessions.info_calibration_arm`` here — Phase P-1 does NOT touch
@@ -64,17 +65,21 @@ def _arm_content(arm: str):
     )
 
 
-# Phase P-1: 5-point interest Likert with explicit labels at every
-# step so the response semantic is unambiguous. Stored 1..5 in
-# willingness_measurements.value with scale_type='5point_interest'.
+# Phase Q-2b: standardized 'how likely' anchor — the same 5-point
+# scale is used by IC-Q1 (this file), S5-Q3 (step5.py), and S7-Q1
+# (step7.py) so the three willingness measurements are directly
+# paired for the cross-round analysis. scale_type tag changed from
+# the Phase P-1 '5point_interest' to '5point_likely'; historical
+# dogfood rows keep the old tag and are filtered by scale_type
+# in analysis.
 _LIKERT_OPTIONS = [
-    {"label": "Not at all interested",   "value": 1},
-    {"label": "Slightly interested",     "value": 2},
-    {"label": "Moderately interested",   "value": 3},
-    {"label": "Very interested",         "value": 4},
-    {"label": "Definitely would join",   "value": 5},
+    {"label": "1 — Very unlikely",      "value": 1},
+    {"label": "2 — Somewhat unlikely",  "value": 2},
+    {"label": "3 — Undecided",          "value": 3},
+    {"label": "4 — Somewhat likely",    "value": 4},
+    {"label": "5 — Very likely",        "value": 5},
 ]
-_LIKERT_SCALE_TYPE = "5point_interest"
+_LIKERT_SCALE_TYPE = "5point_likely"
 
 
 # Phase P-1: shared className constants — the visual rule for the
@@ -180,8 +185,8 @@ def info_calibration_layout(session_id: str | None = None):
         # Interest question.
         html.Div([
             html.Label(
-                "IC-Q1 · Based on what you've read, how interested would you be "
-                "in joining a VEC?",
+                "IC-Q1 · Based on what you've read, how likely are you "
+                "to join a VEC?",
                 className="form-label fw-bold mb-3 mt-3",
             ),
             dcc.RadioItems(
