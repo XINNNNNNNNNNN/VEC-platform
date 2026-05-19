@@ -198,21 +198,40 @@
           min="0" max="50" step="1" value="0"
           class="form-range"
         />
+        <!-- Phase Q-2c: hidden-until-drag pattern (mirrors S0-Q2 on
+             Welcome state_2). The display starts empty so we can
+             distinguish "user actually answered 0" from "user never
+             touched it". A placeholder hint replaces the value until
+             the first slider input event. -->
         <div class="slider-display text-center fs-4 fw-bold mt-2">
-          <span id="step3-expectation-display">0</span>%
+          <span id="step3-expectation-display"></span>
+          <small id="step3-expectation-placeholder"
+                 class="text-muted d-block fs-6 fw-normal mt-1">
+            ↓ Move the slider to set your expectation
+          </small>
         </div>
       </div>
     </div>
 
     <div class="card mb-3 confidence-card">
-      <div class="card-header"><strong>S2-Q2 · How confident are you about this estimate?</strong></div>
+      <div class="card-header"><strong>S2-Q2 · How confident are you that this % is roughly accurate?</strong></div>
       <div class="card-body">
+        <!-- Phase Q-2c: v3 wording with the "in other words" clarifier.
+             Semantic is ESTIMATE ACCURACY (is my % close to truth?), not
+             DECISION confidence (will I actually join?) — that's S0-Q3 +
+             S7-Q8. The 5-Likert anchors are shared with S0-Q3 / S7-Q8 by
+             design so the confidence battery uses a single visual scale,
+             but the question stems differ. -->
+        <p class="text-muted small mb-2">
+          In other words: if a VEC really existed and you joined, how
+          likely is your actual saving to be close to the % you just gave?
+        </p>
         <div class="likert-group">
-          <label><input type="radio" name="step3-confidence" value="1"/> 1 — Not at all confident</label>
-          <label><input type="radio" name="step3-confidence" value="2"/> 2 — Slightly confident</label>
-          <label><input type="radio" name="step3-confidence" value="3"/> 3 — Moderately confident</label>
-          <label><input type="radio" name="step3-confidence" value="4"/> 4 — Quite confident</label>
-          <label><input type="radio" name="step3-confidence" value="5"/> 5 — Very confident</label>
+          <label><input type="radio" name="step3-confidence" value="1"/> 1 — Very unsure</label>
+          <label><input type="radio" name="step3-confidence" value="2"/> 2 — Somewhat unsure</label>
+          <label><input type="radio" name="step3-confidence" value="3"/> 3 — Moderately sure</label>
+          <label><input type="radio" name="step3-confidence" value="4"/> 4 — Quite sure</label>
+          <label><input type="radio" name="step3-confidence" value="5"/> 5 — Very sure</label>
         </div>
         <div id="step3-error" class="error-text"></div>
       </div>
