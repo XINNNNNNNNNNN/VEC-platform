@@ -341,9 +341,20 @@ def _validate_step1(building_type, area, people, occupation):
     Input("area", "value"),
     Input("people", "value"),
     Input("occupation", "value"),
-    Input("url", "search"),
+    prevent_initial_call=True,
 )
-def update_next_visual(building_type, area, people, occupation, search):
+def update_next_visual(building_type, area, people, occupation):
+    """Phase Q-2a hotfix: dropped Input("url", "search") and the
+    `search` parameter. That Input was a historical leftover (the
+    function never consumed search). It caused a 500 when the
+    cheap-talk state_3 navigation changed url.search BEFORE
+    display_page re-rendered page-content — at that instant the
+    building-type/area/people/occupation widgets weren't in the
+    DOM yet, and Dash 4.x raises a callback exception for the
+    missing components. With this Input removed the callback only
+    fires on form field edits, which only happen once the Step 1
+    layout is actually mounted. prevent_initial_call=True added for
+    defense-in-depth."""
     hints = _validate_step1(building_type, area, people, occupation)
     if hints:
         return "mt-2 disabled-look"
