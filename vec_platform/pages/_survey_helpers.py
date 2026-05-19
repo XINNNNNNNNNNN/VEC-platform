@@ -5,7 +5,7 @@ callbacks fill different subsets of the row's columns at different points
 in the journey (Phase 4-A renumbering applied):
 
   Step 3 submit  → step3_q1_shift_intent + step3_q2_control_pref
-  Step 5 submit  → step5_expectation_vs_reality
+  Step 5 submit  → step5_disconfirmation_emotion (Phase Q-3a)
   Step 6 submit  → step6_broader_impacts_shift
   Step 7 submit  → q1_willingness, q3_concerns, q4_savings_perception, +
                    q5_trust_source, q6_fairness_pref, q7_transparency_pref,
